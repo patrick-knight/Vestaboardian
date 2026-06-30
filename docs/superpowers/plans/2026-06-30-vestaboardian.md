@@ -61,11 +61,11 @@ main.js                 (esbuild output, committed)
 ## Task 1: Repo scaffold and build/test toolchain
 
 **Files:**
-- Create: `package.json`, `tsconfig.json`, `esbuild.config.mjs`, `manifest.json`, `versions.json`, `.gitignore`, `src/main.ts`, `tests/smoke.test.ts`
+- Create: `package.json`, `tsconfig.json`, `esbuild.config.mjs`, `manifest.json`, `versions.json`, `.gitignore`, `src/main.ts`, `tests/smoke.test.ts`, `vitest.config.ts`, `tests/_stubs/obsidian.ts`
 
 **Interfaces:**
 - Consumes: nothing.
-- Produces: `npm run build` emits `main.js`; `npx vitest run` executes tests. A no-op `main.ts` exporting a default Plugin subclass.
+- Produces: `npm run build` emits `main.js`; `npx vitest run` executes tests. A no-op `main.ts` exporting a default Plugin subclass. The vitest `obsidian` alias + stub so any `obsidian`-importing module (starting with `settings.ts` in Task 10) is unit-testable from the first core task onward.
 
 This task is coarse boilerplate — no failing-test ceremony on config files. One smoke test proves the toolchain runs.
 
@@ -209,7 +209,55 @@ export default class VestaboardianPlugin extends Plugin {
 }
 ```
 
-- [ ] **Step 8: Create `tests/smoke.test.ts`**
+- [ ] **Step 8: Create the vitest config and obsidian stub**
+
+These are created here (not in a later task) because `settings.ts` (Task 10) is the first module that imports from `obsidian`, and without the alias vitest resolves the real `obsidian` package whose runtime exports are undefined — `class X extends PluginSettingTab` then throws `Class extends value undefined` at module load. Establishing the stub now makes every obsidian-importing task self-contained.
+
+`tests/_stubs/obsidian.ts`:
+
+```ts
+// Minimal stubs so modules importing "obsidian" can be unit-tested.
+export class Plugin {}
+export class PluginSettingTab {
+  constructor(_app: unknown, _plugin: unknown) {}
+}
+export class Setting {
+  constructor(_el: unknown) {}
+  setName() { return this; }
+  setDesc() { return this; }
+  addText() { return this; }
+  addToggle() { return this; }
+  addDropdown() { return this; }
+  addButton() { return this; }
+}
+export class Modal {
+  constructor(_app: unknown) {}
+}
+export class ItemView {
+  constructor(_leaf: unknown) {}
+}
+export class Notice {
+  constructor(_msg: string) {}
+}
+export type App = unknown;
+```
+
+`vitest.config.ts`:
+
+```ts
+import { defineConfig } from "vitest/config";
+import { fileURLToPath } from "node:url";
+
+export default defineConfig({
+  resolve: {
+    alias: {
+      obsidian: fileURLToPath(new URL("./tests/_stubs/obsidian.ts", import.meta.url)),
+    },
+  },
+});
+```
+
+- [ ] **Step 9: Create `tests/smoke.test.ts`**
 
 ```ts
 import { describe, it, expect } from "vitest";
@@ -221,15 +269,15 @@ describe("toolchain", () => {
 });
 ```
 
-- [ ] **Step 9: Install deps, build, and test**
+- [ ] **Step 10: Install deps, build, and test**
 
 Run: `npm install && npm run build && npx vitest run`
 Expected: `npm install` succeeds; `main.js` is created at repo root; vitest reports `1 passed`.
 
-- [ ] **Step 10: Commit**
+- [ ] **Step 11: Commit**
 
 ```bash
-git add package.json tsconfig.json esbuild.config.mjs manifest.json versions.json .gitignore src/main.ts tests/smoke.test.ts main.js package-lock.json
+git add package.json tsconfig.json esbuild.config.mjs manifest.json versions.json .gitignore src/main.ts tests/smoke.test.ts vitest.config.ts tests/_stubs/obsidian.ts main.js package-lock.json
 git commit -m "chore: scaffold plugin build and test toolchain"
 ```
 
@@ -1006,9 +1054,11 @@ describe("LocalTransport", () => {
     });
   });
 
-  it("readState GETs and returns the message array", async () => {
+  it("readState GETs and returns the raw 2D array the Local API sends", async () => {
     const board = [[1, 2]];
-    const request = vi.fn().mockResolvedValue({ status: 200, json: { message: board }, text: "" });
+    // Verified against docs.vestaboard.com: the Local API GET returns the grid
+    // directly as a 2D array (not wrapped in a `message` key).
+    const request = vi.fn().mockResolvedValue({ status: 200, json: board, text: "" });
     const t = new LocalTransport({ host: "vestaboard.local", apiKey: "KEY", request });
     expect(await t.readState()).toEqual(board);
     expect(request).toHaveBeenCalledWith({
@@ -1016,6 +1066,13 @@ describe("LocalTransport", () => {
       method: "GET",
       headers: { "X-Vestaboard-Local-Api-Key": "KEY" },
     });
+  });
+
+  it("readState also tolerates a {message} wrapper if firmware returns one", async () => {
+    const board = [[3, 4]];
+    const request = vi.fn().mockResolvedValue({ status: 200, json: { message: board }, text: "" });
+    const t = new LocalTransport({ host: "vestaboard.local", apiKey: "KEY", request });
+    expect(await t.readState()).toEqual(board);
   });
 
   it("throws on non-2xx send", async () => {
@@ -1100,6 +1157,9 @@ export class LocalTransport implements Transport {
     if (res.status < 200 || res.status >= 300) {
       throw new Error(`Local API read failed: ${res.status} ${res.text}`);
     }
+    // The Local API returns the grid directly as a 2D array; tolerate a
+    // {message: [...]} wrapper as well in case firmware versions differ.
+    if (Array.isArray(res.json)) return res.json as number[][];
     const body = res.json as { message?: number[][] };
     return body.message ?? [];
   }
@@ -1125,7 +1185,7 @@ export class LocalTransport implements Transport {
 - [ ] **Step 5: Run test to verify it passes**
 
 Run: `npx vitest run tests/transport/localTransport.test.ts`
-Expected: PASS (4 tests).
+Expected: PASS (5 tests).
 
 - [ ] **Step 6: Commit**
 
@@ -1144,7 +1204,9 @@ git commit -m "feat: add Transport interface and Local API transport"
 
 **Interfaces:**
 - Consumes: `Transport`, `RequestFn`.
-- Produces: `class CloudTransport implements Transport` — constructed with `{ apiKey: string; request: RequestFn }`. Sends the character-code array to the Read/Write API; `readState()` reads current board. Uses base URL `https://rw.vestaboard.com/` with header `X-Vestaboard-Read-Write-Key`. The POST body is the grid JSON; the read response's `currentMessage.layout` is a JSON string of the grid.
+- Produces: `class CloudTransport implements Transport` — constructed with `{ apiKey: string; request: RequestFn }`. Sends the character-code array to the Read/Write API; `readState()` reads current board. Uses base URL `https://rw.vestaboard.com/` with header `X-Vestaboard-Read-Write-Key`. The POST body is the grid JSON; the read response's `currentMessage.layout` is a JSON string of the grid (verified against docs.vestaboard.com).
+
+> **Verify before trusting (constants, not logic):** Vestaboard's docs describe two distinct cloud products — the **Read/Write API** (`rw.vestaboard.com`, header `X-Vestaboard-Read-Write-Key`) that spec §9 names, and the **Subscription Cloud API** (`cloud.vestaboard.com`, header `X-Vestaboard-Token`). This plan targets the Read/Write API per the spec. The `currentMessage.layout`-as-JSON-string read shape is confirmed; the POST body (raw `[[...]]` array) is the documented form but is also accepted as `{characters: [[...]]}`. During execution, confirm the base URL, header, and accepted POST body against the developer's actual Read/Write key + board before relying on a physical send. The mocked tests below pin the shape this plan assumes; they do not prove it against the live API.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1458,7 +1520,7 @@ export class VestaboardianSettingTab extends PluginSettingTab {
 Run: `npx vitest run tests/obsidian/settings.test.ts`
 Expected: PASS (2 tests).
 
-Note: the test imports only the pure exports; vitest will still parse the `obsidian` import. Add an `obsidian` stub for tests — see Task 11 Step 1 which sets up `vitest.config.ts` with an alias. If this task runs first, create that config now (copy from Task 11 Step 1).
+Note: the test imports only the pure exports, but vitest still parses the `obsidian` import in `settings.ts`. The `obsidian` alias + stub created in Task 1 (Step 8) resolves this — no extra setup needed here.
 
 - [ ] **Step 5: Commit**
 
@@ -1472,7 +1534,7 @@ git commit -m "feat: add settings model and settings tab"
 ## Task 11: Message region reader
 
 **Files:**
-- Create: `src/obsidian/region.ts`, `tests/_stubs/obsidian.ts`, `vitest.config.ts`
+- Create: `src/obsidian/region.ts`
 - Test: `tests/obsidian/region.test.ts`
 
 **Interfaces:**
@@ -1482,55 +1544,9 @@ git commit -m "feat: add settings model and settings tab"
 
 **Behavior:** Find the first line equal to `marker` (trimmed). The message is the block from the first non-blank line after the marker up to (exclusive) the next blank line, the next heading (`#`-prefixed), or end of file — capped at `maxRows` lines. `startLine`/`endLine` are 0-based line indices of the message block (for the history writer to know where prose ends). `found=false` when the marker is absent.
 
-This task also establishes the vitest `obsidian` alias so any `obsidian`-importing module can be unit-tested.
+(The vitest `obsidian` alias + stub already exist from Task 1, Step 8.)
 
-- [ ] **Step 1: Create `vitest.config.ts` and the obsidian stub**
-
-`tests/_stubs/obsidian.ts`:
-
-```ts
-// Minimal stubs so modules importing "obsidian" can be unit-tested.
-export class Plugin {}
-export class PluginSettingTab {
-  constructor(_app: unknown, _plugin: unknown) {}
-}
-export class Setting {
-  constructor(_el: unknown) {}
-  setName() { return this; }
-  setDesc() { return this; }
-  addText() { return this; }
-  addToggle() { return this; }
-  addDropdown() { return this; }
-  addButton() { return this; }
-}
-export class Modal {
-  constructor(_app: unknown) {}
-}
-export class ItemView {
-  constructor(_leaf: unknown) {}
-}
-export class Notice {
-  constructor(_msg: string) {}
-}
-export type App = unknown;
-```
-
-`vitest.config.ts`:
-
-```ts
-import { defineConfig } from "vitest/config";
-import { fileURLToPath } from "node:url";
-
-export default defineConfig({
-  resolve: {
-    alias: {
-      obsidian: fileURLToPath(new URL("./tests/_stubs/obsidian.ts", import.meta.url)),
-    },
-  },
-});
-```
-
-- [ ] **Step 2: Write the failing test**
+- [ ] **Step 1: Write the failing test**
 
 ```ts
 import { describe, it, expect } from "vitest";
@@ -1575,12 +1591,12 @@ describe("readMessageRegion", () => {
 });
 ```
 
-- [ ] **Step 3: Run test to verify it fails**
+- [ ] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run tests/obsidian/region.test.ts`
 Expected: FAIL — cannot find module `region`.
 
-- [ ] **Step 4: Write minimal implementation**
+- [ ] **Step 3: Write minimal implementation**
 
 ```ts
 export interface MessageRegion {
@@ -1632,16 +1648,16 @@ export function readMessageRegion(
 }
 ```
 
-- [ ] **Step 5: Run test to verify it passes**
+- [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/obsidian/region.test.ts`
 Expected: PASS (5 tests).
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add vitest.config.ts tests/_stubs/obsidian.ts src/obsidian/region.ts tests/obsidian/region.test.ts
-git commit -m "feat: add message region reader and vitest obsidian stub"
+git add src/obsidian/region.ts tests/obsidian/region.test.ts
+git commit -m "feat: add message region reader"
 ```
 
 ---
@@ -1886,7 +1902,16 @@ const requestAdapter: RequestFn = async (opts) => {
     body: opts.body,
     throw: false,
   });
-  return { status: res.status, json: res.json, text: res.text };
+  // requestUrl exposes `.json` as a getter that THROWS on an empty/non-JSON
+  // body (common for write responses). Access it defensively so a successful
+  // POST with an empty body does not surface as a send failure.
+  let json: unknown;
+  try {
+    json = res.json;
+  } catch {
+    json = undefined;
+  }
+  return { status: res.status, json, text: res.text };
 };
 
 export default class VestaboardianPlugin extends Plugin {
