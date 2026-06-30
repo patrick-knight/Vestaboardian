@@ -520,12 +520,13 @@ git commit -m "feat: add device-aware glyph map with emoji support"
 ## Task 4: Core — compiler (text → grid with grapheme-aware emoji)
 
 **Files:**
-- Create: `src/core/compile.ts`
+- Create: `src/core/segment.ts`, `src/core/compile.ts`
 - Test: `tests/core/compile.test.ts`
 
 **Interfaces:**
 - Consumes: `Device` from `device.ts`; `charToCode`, `EMOJI_TO_CODE`, `BLANK` from `glyphMap.ts`.
 - Produces:
+  - `function graphemes(line: string): string[]` (in `src/core/segment.ts`) — grapheme-cluster segmentation via `Intl.Segmenter`, falling back to code-point spread. Shared by `compile.ts` and `autofix.ts` (Task 6) so the segmentation logic exists in exactly one place.
   - `interface CompileIssue { kind: "unsupported"; char: string; row: number; col: number }`
   - `interface CompileResult { grid: number[][]; issues: CompileIssue[]; overWidth: Array<{ row: number; length: number }> }`
   - `function compile(text: string, device: Device): CompileResult`
@@ -592,11 +593,29 @@ describe("compile", () => {
 Run: `npx vitest run tests/core/compile.test.ts`
 Expected: FAIL — cannot find module `compile`.
 
-- [ ] **Step 3: Write minimal implementation**
+- [ ] **Step 3: Write `src/core/segment.ts`**
+
+```ts
+// Segment a line into user-perceived characters (grapheme clusters) so
+// multi-codepoint emoji (e.g. "❤️") are not split. Falls back to code-point
+// spread when Intl.Segmenter is unavailable. Shared by compile and autofix.
+export function graphemes(line: string): string[] {
+  const Seg = (Intl as unknown as { Segmenter?: typeof Intl.Segmenter })
+    .Segmenter;
+  if (Seg) {
+    const seg = new Seg(undefined, { granularity: "grapheme" });
+    return Array.from(seg.segment(line), (s) => s.segment);
+  }
+  return Array.from(line);
+}
+```
+
+- [ ] **Step 4: Write minimal implementation of `compile.ts`**
 
 ```ts
 import type { Device } from "./device";
 import { BLANK, EMOJI_TO_CODE, charToCode } from "./glyphMap";
+import { graphemes } from "./segment";
 
 export interface CompileIssue {
   kind: "unsupported";
@@ -609,19 +628,6 @@ export interface CompileResult {
   grid: number[][];
   issues: CompileIssue[];
   overWidth: Array<{ row: number; length: number }>;
-}
-
-// Segment a line into user-perceived characters so multi-codepoint
-// emoji (e.g. "❤️") are not split. Falls back to spread if Intl.Segmenter
-// is unavailable.
-function graphemes(line: string): string[] {
-  const Seg = (Intl as unknown as { Segmenter?: typeof Intl.Segmenter })
-    .Segmenter;
-  if (Seg) {
-    const seg = new Seg(undefined, { granularity: "grapheme" });
-    return Array.from(seg.segment(line), (s) => s.segment);
-  }
-  return Array.from(line);
 }
 
 export function compile(text: string, device: Device): CompileResult {
@@ -660,16 +666,16 @@ export function compile(text: string, device: Device): CompileResult {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **Step 5: Run test to verify it passes**
 
 Run: `npx vitest run tests/core/compile.test.ts`
-Expected: PASS (7 tests).
+Expected: PASS (7 tests). (`segment.ts` is exercised transitively here — the ❤️ test proves grapheme clustering — and again in Task 6's autofix tests.)
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add src/core/compile.ts tests/core/compile.test.ts
-git commit -m "feat: add grapheme-aware text-to-grid compiler"
+git add src/core/segment.ts src/core/compile.ts tests/core/compile.test.ts
+git commit -m "feat: add grapheme segmentation and text-to-grid compiler"
 ```
 
 ---
@@ -794,7 +800,7 @@ git commit -m "feat: add device-aware grid validation with typed errors"
 - Test: `tests/core/autofix.test.ts`
 
 **Interfaces:**
-- Consumes: `Device`; `compile` from `compile.ts`; `validate` from `validate.ts`.
+- Consumes: `Device`; `EMOJI_TO_CODE`, `charToCode` from `glyphMap.ts`; `graphemes` from `segment.ts`; (`compile`/`validate` used only in the test's `isClean` helper).
 - Produces: `function autofix(text: string, device: Device): string` — returns a corrected message string whose `compile`→`validate` output is empty. Strategy: drop unsupported graphemes, truncate over-wide rows to `device.cols` graphemes, drop rows beyond `device.rows`. (Letter-casing is already handled by the compiler, so casing needs no change here.)
 
 - [ ] **Step 1: Write the failing test**
@@ -850,16 +856,7 @@ Expected: FAIL — cannot find module `autofix`.
 ```ts
 import type { Device } from "./device";
 import { EMOJI_TO_CODE, charToCode } from "./glyphMap";
-
-function graphemes(line: string): string[] {
-  const Seg = (Intl as unknown as { Segmenter?: typeof Intl.Segmenter })
-    .Segmenter;
-  if (Seg) {
-    const seg = new Seg(undefined, { granularity: "grapheme" });
-    return Array.from(seg.segment(line), (s) => s.segment);
-  }
-  return Array.from(line);
-}
+import { graphemes } from "./segment";
 
 function isSupported(seg: string): boolean {
   return EMOJI_TO_CODE.has(seg) || charToCode(seg) !== undefined;
