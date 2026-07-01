@@ -1,0 +1,10 @@
+{
+  "id": "vestaboardian",
+  "name": "Vestaboardian",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "Compose a message in a note and send it to your Vestaboard display.",
+  "author": "Patrick Knight",
+  "authorUrl": "https://github.com/patrick-knight",
+  "isDesktopOnly": true
+}
