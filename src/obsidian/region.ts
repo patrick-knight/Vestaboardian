@@ -34,7 +34,10 @@ export function readMessageRegion(
   for (; i < lines.length && collected.length < maxRows; i++) {
     const line = lines[i];
     if (line.trim() === "") break;
-    if (line.startsWith("#")) break;
+    // Stop at an ATX heading (`#`..`######` followed by a space) — but NOT at a
+    // line that merely starts with `#`, since `#` is a valid Vestaboard tile
+    // (code 39), so e.g. `#SALE` is a legitimate message row.
+    if (/^#{1,6}\s/.test(line)) break;
     collected.push(line);
   }
 

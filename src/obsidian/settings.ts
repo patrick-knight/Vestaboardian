@@ -45,6 +45,10 @@ export function floorPollInterval(sec: number): number {
 interface SettingsHost extends Plugin {
   settings: VestaboardianSettings;
   saveSettings(): Promise<void>;
+  // Re-evaluate the poller against current settings. Called from the polling
+  // controls so enabling/disabling/retiming polling takes effect immediately
+  // rather than only on the next send or reload.
+  restartPolling(): void;
 }
 
 export class VestaboardianSettingTab extends PluginSettingTab {
@@ -130,6 +134,7 @@ export class VestaboardianSettingTab extends PluginSettingTab {
         t.setValue(s.pollingEnabled).onChange(async (v) => {
           s.pollingEnabled = v;
           await this.host.saveSettings();
+          this.host.restartPolling();
         }),
       );
 
@@ -139,6 +144,7 @@ export class VestaboardianSettingTab extends PluginSettingTab {
         t.setValue(String(s.pollingIntervalSec)).onChange(async (v) => {
           s.pollingIntervalSec = floorPollInterval(Number(v) || MIN_POLL_SEC);
           await this.host.saveSettings();
+          this.host.restartPolling();
         }),
       );
 

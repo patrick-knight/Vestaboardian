@@ -53,8 +53,11 @@ unsupported characters, truncated over-wide rows, trimmed extra rows) and
 re-validated automatically.
 
 A `## Vestaboard History` table (created if absent, newest-first) records when
-each message went live and — inferred on the next post, or via optional polling
-— when it left the board. The timestamp format is configurable.
+each message went live and, **inferred on the next post**, when the previous
+message left the board. The timestamp format is configurable. Optional polling
+watches the board and clears the plugin's "currently live" state when it detects
+the board was changed elsewhere (e.g. from the mobile app); the authoritative
+exit timestamp in the note still comes from infer-on-next-post.
 
 Run **"Open Vestaboard preview"** for a live right-sidebar tile preview that
 re-renders as you type, with validation status and a Send button.
@@ -80,8 +83,15 @@ beta:
    Send; confirm a history row appears with a live timestamp.
 5. Dismiss the confirm modal with Escape and confirm the send cleanly cancels
    (no hang).
-6. (With a board/key available) confirm the physical board updates over both the
+6. Confirm the history append (written back through the editor) lands correctly
+   and does not lose unsaved edits or leave the cursor somewhere jarring.
+7. Click **Send** from the sidebar preview and confirm it still targets the
+   active note (Obsidian focus behavior around the sidebar button is unverified
+   statically).
+8. (With a board/key available) confirm the physical board updates over both the
    Local and Cloud transports, and that `readState` returns the current grid.
+   Verify the Cloud Read/Write API accepts the raw `[[...]]` POST body (or adjust
+   `cloudTransport` to the `{ characters: [[...]] }` form if it does not).
 
 ## Build
 

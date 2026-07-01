@@ -37,4 +37,14 @@ describe("readMessageRegion", () => {
     const text = "## Vestaboard\n\n\nHELLO\n";
     expect(readMessageRegion(text, "## Vestaboard", 6).message).toBe("HELLO");
   });
+
+  it("keeps a #-leading tile row that is not an ATX heading", () => {
+    const text = "## Vestaboard\n#SALE\nTODAY";
+    expect(readMessageRegion(text, "## Vestaboard", 6).message).toBe("#SALE\nTODAY");
+  });
+
+  it("still stops at a real ATX heading (# then space)", () => {
+    const text = "## Vestaboard\nHELLO\n# Notes";
+    expect(readMessageRegion(text, "## Vestaboard", 6).message).toBe("HELLO");
+  });
 });

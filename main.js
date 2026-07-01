@@ -32,6 +32,36 @@ function deviceFor(name) {
   return name === "note" ? NOTE : FLAGSHIP;
 }
 
+// src/core/validate.ts
+function validate(result, device) {
+  const errors = [];
+  if (result.grid.length > device.rows) {
+    errors.push({ kind: "TooManyRows", got: result.grid.length, max: device.rows });
+  }
+  for (const ow of result.overWidth) {
+    errors.push({ kind: "RowTooWide", row: ow.row, length: ow.length, max: device.cols });
+  }
+  for (const issue of result.issues) {
+    errors.push({
+      kind: "UnsupportedChar",
+      char: issue.char,
+      row: issue.row,
+      col: issue.col
+    });
+  }
+  return errors;
+}
+function describeError(e) {
+  switch (e.kind) {
+    case "RowTooWide":
+      return `row ${e.row + 1} is ${e.length}/${e.max} wide`;
+    case "TooManyRows":
+      return `${e.got} rows exceeds the ${e.max}-row board`;
+    case "UnsupportedChar":
+      return `character '${e.char}' at row ${e.row + 1} col ${e.col + 1} is not supported`;
+  }
+}
+
 // src/core/glyphMap.ts
 var BLANK = 0;
 var CHAR_TO_CODE = /* @__PURE__ */ new Map();
@@ -92,98 +122,6 @@ function codeToGlyph(code, device) {
   if (isColorCode(code)) return "";
   const glyph = CODE_TO_GLYPH.get(code);
   return glyph != null ? glyph : "?";
-}
-
-// src/core/segment.ts
-function graphemes(line) {
-  if (typeof Intl !== "undefined" && "Segmenter" in Intl) {
-    const seg = new Intl.Segmenter(void 0, { granularity: "grapheme" });
-    return Array.from(seg.segment(line), (s) => s.segment);
-  }
-  return Array.from(line);
-}
-
-// src/core/compile.ts
-function compile(text, device) {
-  const lines = text.split("\n");
-  const grid = [];
-  const issues = [];
-  const overWidth = [];
-  lines.forEach((line, row) => {
-    const codes = [];
-    let col = 0;
-    for (const seg of graphemes(line)) {
-      const emoji = EMOJI_TO_CODE.get(seg);
-      if (emoji !== void 0) {
-        codes.push(emoji);
-        col++;
-        continue;
-      }
-      const code = charToCode(seg);
-      if (code !== void 0) {
-        codes.push(code);
-        col++;
-        continue;
-      }
-      issues.push({ kind: "unsupported", char: seg, row, col });
-    }
-    if (codes.length > device.cols) {
-      overWidth.push({ row, length: codes.length });
-    }
-    while (codes.length < device.cols) codes.push(BLANK);
-    grid.push(codes);
-  });
-  return { grid, issues, overWidth };
-}
-
-// src/core/validate.ts
-function validate(result, device) {
-  const errors = [];
-  if (result.grid.length > device.rows) {
-    errors.push({ kind: "TooManyRows", got: result.grid.length, max: device.rows });
-  }
-  for (const ow of result.overWidth) {
-    errors.push({ kind: "RowTooWide", row: ow.row, length: ow.length, max: device.cols });
-  }
-  for (const issue of result.issues) {
-    errors.push({
-      kind: "UnsupportedChar",
-      char: issue.char,
-      row: issue.row,
-      col: issue.col
-    });
-  }
-  return errors;
-}
-function describeError(e) {
-  switch (e.kind) {
-    case "RowTooWide":
-      return `row ${e.row + 1} is ${e.length}/${e.max} wide`;
-    case "TooManyRows":
-      return `${e.got} rows exceeds the ${e.max}-row board`;
-    case "UnsupportedChar":
-      return `character '${e.char}' at row ${e.row + 1} col ${e.col + 1} is not supported`;
-  }
-}
-
-// src/core/autofix.ts
-function isSupported(seg) {
-  return EMOJI_TO_CODE.has(seg) || charToCode(seg) !== void 0;
-}
-function autofix(text, device) {
-  const lines = text.split("\n");
-  const fixedRows = [];
-  for (const line of lines) {
-    if (fixedRows.length >= device.rows) break;
-    const kept = [];
-    for (const seg of graphemes(line)) {
-      if (!isSupported(seg)) continue;
-      if (kept.length >= device.cols) break;
-      kept.push(seg);
-    }
-    fixedRows.push(kept.join(""));
-  }
-  return fixedRows.join("\n");
 }
 
 // src/core/render.ts
@@ -379,12 +317,14 @@ var VestaboardianSettingTab = class extends import_obsidian.PluginSettingTab {
       (t) => t.setValue(s.pollingEnabled).onChange(async (v) => {
         s.pollingEnabled = v;
         await this.host.saveSettings();
+        this.host.restartPolling();
       })
     );
     new import_obsidian.Setting(containerEl).setName(`Poll interval (seconds, min ${MIN_POLL_SEC})`).addText(
       (t) => t.setValue(String(s.pollingIntervalSec)).onChange(async (v) => {
         s.pollingIntervalSec = floorPollInterval(Number(v) || MIN_POLL_SEC);
         await this.host.saveSettings();
+        this.host.restartPolling();
       })
     );
     new import_obsidian.Setting(containerEl).setName("History date format").addText(
@@ -399,6 +339,68 @@ var VestaboardianSettingTab = class extends import_obsidian.PluginSettingTab {
     });
   }
 };
+
+// src/core/segment.ts
+function graphemes(line) {
+  if (typeof Intl !== "undefined" && "Segmenter" in Intl) {
+    const seg = new Intl.Segmenter(void 0, { granularity: "grapheme" });
+    return Array.from(seg.segment(line), (s) => s.segment);
+  }
+  return Array.from(line);
+}
+
+// src/core/compile.ts
+function compile(text, device) {
+  const lines = text.split("\n");
+  const grid = [];
+  const issues = [];
+  const overWidth = [];
+  lines.forEach((line, row) => {
+    const codes = [];
+    let col = 0;
+    for (const seg of graphemes(line)) {
+      const emoji = EMOJI_TO_CODE.get(seg);
+      if (emoji !== void 0) {
+        codes.push(emoji);
+        col++;
+        continue;
+      }
+      const code = charToCode(seg);
+      if (code !== void 0) {
+        codes.push(code);
+        col++;
+        continue;
+      }
+      issues.push({ kind: "unsupported", char: seg, row, col });
+    }
+    if (codes.length > device.cols) {
+      overWidth.push({ row, length: codes.length });
+    }
+    while (codes.length < device.cols) codes.push(BLANK);
+    grid.push(codes);
+  });
+  return { grid, issues, overWidth };
+}
+
+// src/core/autofix.ts
+function isSupported(seg) {
+  return EMOJI_TO_CODE.has(seg) || charToCode(seg) !== void 0;
+}
+function autofix(text, device) {
+  const lines = text.split("\n");
+  const fixedRows = [];
+  for (const line of lines) {
+    if (fixedRows.length >= device.rows) break;
+    const kept = [];
+    for (const seg of graphemes(line)) {
+      if (!isSupported(seg)) continue;
+      if (kept.length >= device.cols) break;
+      kept.push(seg);
+    }
+    fixedRows.push(kept.join(""));
+  }
+  return fixedRows.join("\n");
+}
 
 // src/obsidian/region.ts
 var EMPTY = { found: false, message: "", startLine: -1, endLine: -1 };
@@ -421,7 +423,7 @@ function readMessageRegion(text, marker, maxRows) {
   for (; i < lines.length && collected.length < maxRows; i++) {
     const line = lines[i];
     if (line.trim() === "") break;
-    if (line.startsWith("#")) break;
+    if (/^#{1,6}\s/.test(line)) break;
     collected.push(line);
   }
   return {
@@ -430,6 +432,21 @@ function readMessageRegion(text, marker, maxRows) {
     startLine: start,
     endLine: start + collected.length - 1
   };
+}
+
+// src/obsidian/sendPrep.ts
+function prepareSend(text, marker, device, autofixEnabled) {
+  const region = readMessageRegion(text, marker, device.rows);
+  if (!region.found) return { found: false, message: "", grid: [], errors: [] };
+  let message = region.message;
+  let result = compile(message, device);
+  let errors = validate(result, device);
+  if (errors.length > 0 && autofixEnabled) {
+    message = autofix(region.message, device);
+    result = compile(message, device);
+    errors = validate(result, device);
+  }
+  return { found: true, message, grid: result.grid, errors };
 }
 
 // src/obsidian/historyWriter.ts
@@ -747,35 +764,25 @@ var VestaboardianPlugin = class extends import_obsidian4.Plugin {
       new import_obsidian4.Notice("Vestaboardian: open a note first.");
       return;
     }
-    const file = view.file;
-    if (!file) return;
+    if (!view.file) return;
     const device = deviceFor(this.settings.device);
-    const text = await this.app.vault.read(file);
-    const region = readMessageRegion(text, this.settings.marker, device.rows);
-    if (!region.found) {
+    const text = view.editor.getValue();
+    const prep = prepareSend(text, this.settings.marker, device, this.settings.autofixDefault);
+    if (!prep.found) {
       new import_obsidian4.Notice(`Vestaboardian: no "${this.settings.marker}" section found.`);
       return;
     }
-    let result = compile(region.message, device);
-    let errors = validate(result, device);
-    if (errors.length > 0) {
-      if (this.settings.autofixDefault) {
-        const fixed = autofix(region.message, device);
-        result = compile(fixed, device);
-        errors = validate(result, device);
-      }
-      if (errors.length > 0) {
-        new import_obsidian4.Notice("Vestaboard message invalid:\n" + errors.map(describeError).join("\n"));
-        return;
-      }
+    if (prep.errors.length > 0) {
+      new import_obsidian4.Notice("Vestaboard message invalid:\n" + prep.errors.map(describeError).join("\n"));
+      return;
     }
-    const model = render(result.grid, device);
+    const model = render(prep.grid, device);
     const confirmed = await new Promise((resolve) => {
       new ConfirmModal(this.app, model, device, which, resolve).open();
     });
     if (!confirmed) return;
     try {
-      await this.transportFor(which).send(result.grid);
+      await this.transportFor(which).send(prep.grid);
     } catch (e) {
       new import_obsidian4.Notice("Vestaboard send failed: " + e.message);
       return;
@@ -785,13 +792,13 @@ var VestaboardianPlugin = class extends import_obsidian4.Plugin {
       liveAt: now,
       exitedAt: "\u2014 (live)",
       transport: which,
-      message: region.message
+      message: prep.message
     });
-    await this.app.vault.modify(file, updated);
+    view.editor.setValue(updated);
     this.settings.liveState = {
-      grid: result.grid,
+      grid: prep.grid,
       transport: which,
-      message: region.message,
+      message: prep.message,
       liveAt: now
     };
     await this.saveSettings();
