@@ -15,6 +15,17 @@ describe("historyWriter", () => {
     expect(out.startsWith("# My note\n\nprose\n")).toBe(true);
   });
 
+  it("does not add a leading blank line for empty notes", () => {
+    const out = appendHistory("", {
+      liveAt: "2026-06-30 14:03",
+      exitedAt: "— (live)",
+      transport: "cloud",
+      message: "HELLO",
+    });
+    expect(out.startsWith("\n")).toBe(false);
+    expect(out.startsWith("## Vestaboard History")).toBe(true);
+  });
+
   it("inserts newest row first and stamps the previous live row's exit", () => {
     const first = appendHistory("# n\n", {
       liveAt: "2026-06-30 14:03", exitedAt: "— (live)", transport: "local", message: "ONE",

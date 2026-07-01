@@ -5,6 +5,10 @@ interface CloudOpts {
   request: RequestFn;
 }
 
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
 const BASE = "https://rw.vestaboard.com/";
 
 export class CloudTransport implements Transport {
@@ -34,8 +38,13 @@ export class CloudTransport implements Transport {
     if (res.status < 200 || res.status >= 300) {
       throw new Error(`Cloud API read failed: ${res.status} ${res.text}`);
     }
-    const body = res.json as { currentMessage?: { layout?: string } };
-    const layout = body.currentMessage?.layout;
-    return layout ? (JSON.parse(layout) as number[][]) : [];
+    if (!isObject(res.json) || !isObject(res.json.currentMessage)) return [];
+    const layout = res.json.currentMessage.layout;
+    if (typeof layout !== "string" || layout.length === 0) return [];
+    try {
+      return JSON.parse(layout) as number[][];
+    } catch {
+      throw new Error("Cloud API read failed: invalid currentMessage.layout JSON");
+    }
   }
 }

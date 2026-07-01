@@ -159,6 +159,9 @@ function render(grid, device) {
 }
 
 // src/transport/localTransport.ts
+function isObject(value) {
+  return typeof value === "object" && value !== null;
+}
 var LocalTransport = class {
   constructor(opts) {
     this.opts = opts;
@@ -181,7 +184,6 @@ var LocalTransport = class {
     }
   }
   async readState() {
-    var _a;
     const res = await this.opts.request({
       url: this.url(),
       method: "GET",
@@ -191,8 +193,10 @@ var LocalTransport = class {
       throw new Error(`Local API read failed: ${res.status} ${res.text}`);
     }
     if (Array.isArray(res.json)) return res.json;
-    const body = res.json;
-    return (_a = body.message) != null ? _a : [];
+    if (isObject(res.json) && Array.isArray(res.json.message)) {
+      return res.json.message;
+    }
+    return [];
   }
   static async enable(host, enablementToken, request) {
     const res = await request({
@@ -203,11 +207,17 @@ var LocalTransport = class {
     if (res.status < 200 || res.status >= 300) {
       throw new Error(`Enablement failed: ${res.status} ${res.text}`);
     }
+    if (!isObject(res.json) || typeof res.json.apiKey !== "string" || !res.json.apiKey) {
+      throw new Error("Enablement succeeded but response did not include apiKey");
+    }
     return res.json.apiKey;
   }
 };
 
 // src/transport/cloudTransport.ts
+function isObject2(value) {
+  return typeof value === "object" && value !== null;
+}
 var BASE = "https://rw.vestaboard.com/";
 var CloudTransport = class {
   constructor(opts) {
@@ -228,7 +238,6 @@ var CloudTransport = class {
     }
   }
   async readState() {
-    var _a;
     const res = await this.opts.request({
       url: BASE,
       method: "GET",
@@ -237,9 +246,14 @@ var CloudTransport = class {
     if (res.status < 200 || res.status >= 300) {
       throw new Error(`Cloud API read failed: ${res.status} ${res.text}`);
     }
-    const body = res.json;
-    const layout = (_a = body.currentMessage) == null ? void 0 : _a.layout;
-    return layout ? JSON.parse(layout) : [];
+    if (!isObject2(res.json) || !isObject2(res.json.currentMessage)) return [];
+    const layout = res.json.currentMessage.layout;
+    if (typeof layout !== "string" || layout.length === 0) return [];
+    try {
+      return JSON.parse(layout);
+    } catch (e) {
+      throw new Error("Cloud API read failed: invalid currentMessage.layout JSON");
+    }
   }
 };
 
@@ -467,8 +481,9 @@ function appendHistory(noteText, row) {
   const lines = noteText.split("\n");
   const headingIdx = lines.findIndex((l) => l.trim() === HISTORY_HEADING);
   if (headingIdx === -1) {
-    const suffix = noteText.endsWith("\n") || noteText === "" ? "" : "\n";
     const block = [HISTORY_HEADING, HEADER, DIVIDER, newRow, ""].join("\n");
+    if (noteText === "") return block + "\n";
+    const suffix = noteText.endsWith("\n") ? "" : "\n";
     return noteText + suffix + "\n" + block + "\n";
   }
   let dividerIdx = -1;

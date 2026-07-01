@@ -27,8 +27,9 @@ export function appendHistory(noteText: string, row: HistoryRow): string {
   const headingIdx = lines.findIndex((l) => l.trim() === HISTORY_HEADING);
 
   if (headingIdx === -1) {
-    const suffix = noteText.endsWith("\n") || noteText === "" ? "" : "\n";
     const block = [HISTORY_HEADING, HEADER, DIVIDER, newRow, ""].join("\n");
+    if (noteText === "") return block + "\n";
+    const suffix = noteText.endsWith("\n") ? "" : "\n";
     return noteText + suffix + "\n" + block + "\n";
   }
 

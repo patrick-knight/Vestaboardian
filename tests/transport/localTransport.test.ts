@@ -39,6 +39,12 @@ describe("LocalTransport", () => {
     expect(await t.readState()).toEqual(board);
   });
 
+  it("readState returns [] when JSON is not array/object", async () => {
+    const request = vi.fn().mockResolvedValue({ status: 200, json: undefined, text: "" });
+    const t = new LocalTransport({ host: "vestaboard.local", apiKey: "KEY", request });
+    expect(await t.readState()).toEqual([]);
+  });
+
   it("throws on non-2xx send", async () => {
     const request = vi.fn().mockResolvedValue({ status: 401, json: {}, text: "nope" });
     const t = new LocalTransport({ host: "vestaboard.local", apiKey: "KEY", request });
@@ -54,5 +60,12 @@ describe("LocalTransport", () => {
       method: "POST",
       headers: { "X-Vestaboard-Local-Api-Enablement-Token": "ENABLE" },
     });
+  });
+
+  it("enable() throws a clear error when apiKey is missing from response", async () => {
+    const request = vi.fn().mockResolvedValue({ status: 200, json: {}, text: "" });
+    await expect(LocalTransport.enable("vestaboard.local", "ENABLE", request)).rejects.toThrow(
+      /did not include apiKey/,
+    );
   });
 });
