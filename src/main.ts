@@ -16,6 +16,7 @@ import { readMessageRegion } from "./obsidian/region";
 import { appendHistory } from "./obsidian/historyWriter";
 import { formatDate } from "./obsidian/formatDate";
 import { ConfirmModal } from "./obsidian/ConfirmModal";
+import { VIEW_TYPE_VESTABOARD, PreviewView } from "./obsidian/PreviewView";
 
 const requestAdapter: RequestFn = async (opts) => {
   const res = await requestUrl({
@@ -63,6 +64,26 @@ export default class VestaboardianPlugin extends Plugin {
     this.addRibbonIcon("send", "Send to Vestaboard", () =>
       this.sendFromActiveNote(this.settings.defaultTransport),
     );
+
+    this.registerView(
+      VIEW_TYPE_VESTABOARD,
+      (leaf) =>
+        new PreviewView(leaf, this.settings, () =>
+          this.sendFromActiveNote(this.settings.defaultTransport),
+        ),
+    );
+
+    this.addCommand({
+      id: "vestaboardian-open-preview",
+      name: "Open Vestaboard preview",
+      callback: async () => {
+        const leaf = this.app.workspace.getRightLeaf(false);
+        if (leaf) {
+          await leaf.setViewState({ type: VIEW_TYPE_VESTABOARD, active: true });
+          this.app.workspace.revealLeaf(leaf);
+        }
+      },
+    });
   }
 
   private transportFor(which: "local" | "cloud"): Transport {

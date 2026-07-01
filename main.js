@@ -23,7 +23,7 @@ __export(main_exports, {
   default: () => VestaboardianPlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian3 = require("obsidian");
+var import_obsidian4 = require("obsidian");
 
 // src/core/device.ts
 var FLAGSHIP = { name: "flagship", rows: 6, cols: 22 };
@@ -532,9 +532,60 @@ var ConfirmModal = class extends import_obsidian2.Modal {
   }
 };
 
+// src/obsidian/PreviewView.ts
+var import_obsidian3 = require("obsidian");
+var VIEW_TYPE_VESTABOARD = "vestaboard-preview";
+var PreviewView = class extends import_obsidian3.ItemView {
+  constructor(leaf, settings, onSend) {
+    super(leaf);
+    this.settings = settings;
+    this.onSend = onSend;
+  }
+  getViewType() {
+    return VIEW_TYPE_VESTABOARD;
+  }
+  getDisplayText() {
+    return "Vestaboard preview";
+  }
+  getIcon() {
+    return "send";
+  }
+  async onOpen() {
+    this.registerEvent(
+      this.app.workspace.on("active-leaf-change", () => this.refresh())
+    );
+    this.registerEvent(this.app.workspace.on("editor-change", () => this.refresh()));
+    this.refresh();
+  }
+  refresh() {
+    var _a;
+    const root = this.contentEl;
+    root.empty();
+    const device = deviceFor(this.settings.device);
+    const view = this.app.workspace.getActiveViewOfType(import_obsidian3.MarkdownView);
+    const text = (_a = view == null ? void 0 : view.editor.getValue()) != null ? _a : "";
+    const region = readMessageRegion(text, this.settings.marker, device.rows);
+    if (!region.found) {
+      root.createEl("p", { text: `No "${this.settings.marker}" section in this note.` });
+      return;
+    }
+    const result = compile(region.message, device);
+    const errors = validate(result, device);
+    renderTileGrid(root, render(result.grid, device), device);
+    const status = root.createEl("p");
+    status.textContent = errors.length ? "Invalid: " + errors.map(describeError).join("; ") : "Valid \u2713";
+    const btn = root.createEl("button", { text: "Send to Vestaboard" });
+    btn.disabled = errors.length > 0 && !this.settings.autofixDefault;
+    btn.onclick = () => this.onSend();
+  }
+  async onClose() {
+    this.contentEl.empty();
+  }
+};
+
 // src/main.ts
 var requestAdapter = async (opts) => {
-  const res = await (0, import_obsidian3.requestUrl)({
+  const res = await (0, import_obsidian4.requestUrl)({
     url: opts.url,
     method: opts.method,
     headers: opts.headers,
@@ -549,7 +600,7 @@ var requestAdapter = async (opts) => {
   }
   return { status: res.status, json, text: res.text };
 };
-var VestaboardianPlugin = class extends import_obsidian3.Plugin {
+var VestaboardianPlugin = class extends import_obsidian4.Plugin {
   constructor() {
     super(...arguments);
     this.settings = DEFAULT_SETTINGS;
@@ -577,6 +628,25 @@ var VestaboardianPlugin = class extends import_obsidian3.Plugin {
       "Send to Vestaboard",
       () => this.sendFromActiveNote(this.settings.defaultTransport)
     );
+    this.registerView(
+      VIEW_TYPE_VESTABOARD,
+      (leaf) => new PreviewView(
+        leaf,
+        this.settings,
+        () => this.sendFromActiveNote(this.settings.defaultTransport)
+      )
+    );
+    this.addCommand({
+      id: "vestaboardian-open-preview",
+      name: "Open Vestaboard preview",
+      callback: async () => {
+        const leaf = this.app.workspace.getRightLeaf(false);
+        if (leaf) {
+          await leaf.setViewState({ type: VIEW_TYPE_VESTABOARD, active: true });
+          this.app.workspace.revealLeaf(leaf);
+        }
+      }
+    });
   }
   transportFor(which) {
     if (which === "local") {
@@ -589,9 +659,9 @@ var VestaboardianPlugin = class extends import_obsidian3.Plugin {
     return new CloudTransport({ apiKey: this.settings.cloudKey, request: requestAdapter });
   }
   async sendFromActiveNote(which) {
-    const view = this.app.workspace.getActiveViewOfType(import_obsidian3.MarkdownView);
+    const view = this.app.workspace.getActiveViewOfType(import_obsidian4.MarkdownView);
     if (!view) {
-      new import_obsidian3.Notice("Vestaboardian: open a note first.");
+      new import_obsidian4.Notice("Vestaboardian: open a note first.");
       return;
     }
     const file = view.file;
@@ -600,7 +670,7 @@ var VestaboardianPlugin = class extends import_obsidian3.Plugin {
     const text = await this.app.vault.read(file);
     const region = readMessageRegion(text, this.settings.marker, device.rows);
     if (!region.found) {
-      new import_obsidian3.Notice(`Vestaboardian: no "${this.settings.marker}" section found.`);
+      new import_obsidian4.Notice(`Vestaboardian: no "${this.settings.marker}" section found.`);
       return;
     }
     let result = compile(region.message, device);
@@ -612,7 +682,7 @@ var VestaboardianPlugin = class extends import_obsidian3.Plugin {
         errors = validate(result, device);
       }
       if (errors.length > 0) {
-        new import_obsidian3.Notice("Vestaboard message invalid:\n" + errors.map(describeError).join("\n"));
+        new import_obsidian4.Notice("Vestaboard message invalid:\n" + errors.map(describeError).join("\n"));
         return;
       }
     }
@@ -624,7 +694,7 @@ var VestaboardianPlugin = class extends import_obsidian3.Plugin {
     try {
       await this.transportFor(which).send(result.grid);
     } catch (e) {
-      new import_obsidian3.Notice("Vestaboard send failed: " + e.message);
+      new import_obsidian4.Notice("Vestaboard send failed: " + e.message);
       return;
     }
     const now = formatDate(/* @__PURE__ */ new Date(), this.settings.dateFormat);
@@ -642,7 +712,7 @@ var VestaboardianPlugin = class extends import_obsidian3.Plugin {
       liveAt: now
     };
     await this.saveSettings();
-    new import_obsidian3.Notice("Sent to Vestaboard.");
+    new import_obsidian4.Notice("Sent to Vestaboard.");
   }
   async loadSettings() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
