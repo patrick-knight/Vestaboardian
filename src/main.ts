@@ -17,6 +17,8 @@ import { appendHistory } from "./obsidian/historyWriter";
 import { formatDate } from "./obsidian/formatDate";
 import { ConfirmModal } from "./obsidian/ConfirmModal";
 import { VIEW_TYPE_VESTABOARD, PreviewView } from "./obsidian/PreviewView";
+import { Poller } from "./obsidian/poller";
+import { floorPollInterval } from "./obsidian/settings";
 
 const requestAdapter: RequestFn = async (opts) => {
   const res = await requestUrl({
@@ -40,6 +42,7 @@ const requestAdapter: RequestFn = async (opts) => {
 
 export default class VestaboardianPlugin extends Plugin {
   settings: VestaboardianSettings = DEFAULT_SETTINGS;
+  private poller: Poller | null = null;
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -84,6 +87,33 @@ export default class VestaboardianPlugin extends Plugin {
         }
       },
     });
+
+    this.register(() => this.poller?.stop());
+    this.restartPolling();
+  }
+
+  private restartPolling(): void {
+    this.poller?.stop();
+    this.poller = null;
+    if (!this.settings.pollingEnabled) return;
+    const intervalMs = floorPollInterval(this.settings.pollingIntervalSec) * 1000;
+    this.poller = new Poller({
+      intervalMs,
+      readState: () =>
+        this.transportFor(this.settings.liveState?.transport ?? this.settings.defaultTransport)
+          .readState(),
+      getLiveGrid: () => this.settings.liveState?.grid ?? null,
+      onExit: async () => {
+        const live = this.settings.liveState;
+        if (!live) return;
+        // Note-targeted exit stamping is out of scope for polling (note identity
+        // is not tracked across restarts); the primary exit stamp is
+        // infer-on-next-post. Clear live state so we do not repeatedly fire.
+        this.settings.liveState = null;
+        await this.saveSettings();
+      },
+    });
+    this.poller.start();
   }
 
   private transportFor(which: "local" | "cloud"): Transport {
@@ -157,6 +187,7 @@ export default class VestaboardianPlugin extends Plugin {
       liveAt: now,
     };
     await this.saveSettings();
+    this.restartPolling();
 
     new Notice("Sent to Vestaboard.");
   }

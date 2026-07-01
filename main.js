@@ -583,6 +583,47 @@ var PreviewView = class extends import_obsidian3.ItemView {
   }
 };
 
+// src/obsidian/poller.ts
+function gridsEqual(a, b) {
+  if (a.length !== b.length) return false;
+  for (let r = 0; r < a.length; r++) {
+    if (a[r].length !== b[r].length) return false;
+    for (let c = 0; c < a[r].length; c++) {
+      if (a[r][c] !== b[r][c]) return false;
+    }
+  }
+  return true;
+}
+var Poller = class {
+  constructor(opts) {
+    this.opts = opts;
+    this.timer = null;
+  }
+  start() {
+    this.stop();
+    this.timer = setInterval(() => void this.tick(), this.opts.intervalMs);
+  }
+  stop() {
+    if (this.timer !== null) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
+  }
+  async tick() {
+    const live = this.opts.getLiveGrid();
+    if (!live) return;
+    let state;
+    try {
+      state = await this.opts.readState();
+    } catch (e) {
+      return;
+    }
+    if (!gridsEqual(state, live)) {
+      this.opts.onExit();
+    }
+  }
+};
+
 // src/main.ts
 var requestAdapter = async (opts) => {
   const res = await (0, import_obsidian4.requestUrl)({
@@ -604,6 +645,7 @@ var VestaboardianPlugin = class extends import_obsidian4.Plugin {
   constructor() {
     super(...arguments);
     this.settings = DEFAULT_SETTINGS;
+    this.poller = null;
   }
   async onload() {
     await this.loadSettings();
@@ -647,6 +689,36 @@ var VestaboardianPlugin = class extends import_obsidian4.Plugin {
         }
       }
     });
+    this.register(() => {
+      var _a;
+      return (_a = this.poller) == null ? void 0 : _a.stop();
+    });
+    this.restartPolling();
+  }
+  restartPolling() {
+    var _a;
+    (_a = this.poller) == null ? void 0 : _a.stop();
+    this.poller = null;
+    if (!this.settings.pollingEnabled) return;
+    const intervalMs = floorPollInterval(this.settings.pollingIntervalSec) * 1e3;
+    this.poller = new Poller({
+      intervalMs,
+      readState: () => {
+        var _a2, _b;
+        return this.transportFor((_b = (_a2 = this.settings.liveState) == null ? void 0 : _a2.transport) != null ? _b : this.settings.defaultTransport).readState();
+      },
+      getLiveGrid: () => {
+        var _a2, _b;
+        return (_b = (_a2 = this.settings.liveState) == null ? void 0 : _a2.grid) != null ? _b : null;
+      },
+      onExit: async () => {
+        const live = this.settings.liveState;
+        if (!live) return;
+        this.settings.liveState = null;
+        await this.saveSettings();
+      }
+    });
+    this.poller.start();
   }
   transportFor(which) {
     if (which === "local") {
@@ -712,6 +784,7 @@ var VestaboardianPlugin = class extends import_obsidian4.Plugin {
       liveAt: now
     };
     await this.saveSettings();
+    this.restartPolling();
     new import_obsidian4.Notice("Sent to Vestaboard.");
   }
   async loadSettings() {
