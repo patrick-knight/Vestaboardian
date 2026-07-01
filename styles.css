@@ -1,0 +1,29 @@
+.vb-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--vb-cols), 1fr);
+  gap: 2px;
+  background: #111;
+  padding: 6px;
+  border-radius: 4px;
+  max-width: 100%;
+}
+.vb-tile {
+  aspect-ratio: 1 / 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #1c1c1c;
+  color: #f0f0f0;
+  font-family: var(--font-monospace);
+  font-size: 0.7em;
+  border-radius: 2px;
+}
+.vb-tile[data-color="red"] { background: #d22; }
+.vb-tile[data-color="orange"] { background: #e72; }
+.vb-tile[data-color="yellow"] { background: #ec3; }
+.vb-tile[data-color="green"] { background: #2a6; }
+.vb-tile[data-color="blue"] { background: #2557d6; }
+.vb-tile[data-color="violet"] { background: #84d; }
+.vb-tile[data-color="white"] { background: #eee; }
+.vb-tile[data-color="black"] { background: #000; }
+.vb-tile[data-color="filled"] { background: #888; }
