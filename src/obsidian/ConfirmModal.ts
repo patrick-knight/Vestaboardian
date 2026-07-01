@@ -4,6 +4,8 @@ import type { RenderModel } from "../core/render";
 import { renderTileGrid } from "./tileGrid";
 
 export class ConfirmModal extends Modal {
+  private settled = false;
+
   constructor(
     app: App,
     private model: RenderModel,
@@ -12,6 +14,16 @@ export class ConfirmModal extends Modal {
     private resolve: (ok: boolean) => void,
   ) {
     super(app);
+  }
+
+  // Resolve exactly once. Guards against both double-resolve (button then
+  // onClose) and never-resolve (dismiss via Escape / click-outside, which
+  // fires onClose without any button click) — the latter would otherwise
+  // hang the awaiting send flow forever.
+  private settle(ok: boolean): void {
+    if (this.settled) return;
+    this.settled = true;
+    this.resolve(ok);
   }
 
   onOpen(): void {
@@ -26,13 +38,13 @@ export class ConfirmModal extends Modal {
           .setButtonText("Send")
           .setCta()
           .onClick(() => {
-            this.resolve(true);
+            this.settle(true);
             this.close();
           }),
       )
       .addButton((b) =>
         b.setButtonText("Cancel").onClick(() => {
-          this.resolve(false);
+          this.settle(false);
           this.close();
         }),
       );
@@ -40,5 +52,6 @@ export class ConfirmModal extends Modal {
 
   onClose(): void {
     this.contentEl.empty();
+    this.settle(false); // dismissed without a choice → treat as cancel
   }
 }

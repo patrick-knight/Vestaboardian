@@ -509,6 +509,16 @@ var ConfirmModal = class extends import_obsidian2.Modal {
     this.device = device;
     this.which = which;
     this.resolve = resolve;
+    this.settled = false;
+  }
+  // Resolve exactly once. Guards against both double-resolve (button then
+  // onClose) and never-resolve (dismiss via Escape / click-outside, which
+  // fires onClose without any button click) — the latter would otherwise
+  // hang the awaiting send flow forever.
+  settle(ok) {
+    if (this.settled) return;
+    this.settled = true;
+    this.resolve(ok);
   }
   onOpen() {
     const { contentEl } = this;
@@ -517,18 +527,19 @@ var ConfirmModal = class extends import_obsidian2.Modal {
     contentEl.createEl("p", { text: `Transport: ${this.which}` });
     new import_obsidian2.Setting(contentEl).addButton(
       (b) => b.setButtonText("Send").setCta().onClick(() => {
-        this.resolve(true);
+        this.settle(true);
         this.close();
       })
     ).addButton(
       (b) => b.setButtonText("Cancel").onClick(() => {
-        this.resolve(false);
+        this.settle(false);
         this.close();
       })
     );
   }
   onClose() {
     this.contentEl.empty();
+    this.settle(false);
   }
 };
 
