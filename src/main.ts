@@ -69,9 +69,9 @@ export default class VestaboardianPlugin extends Plugin {
     this.registerView(
       VIEW_TYPE_VESTABOARD,
       (leaf) =>
-        new PreviewView(leaf, this.settings, () =>
-          this.sendFromActiveNote(this.settings.defaultTransport),
-        ),
+        new PreviewView(leaf, this.settings, () => {
+          void this.sendFromActiveNote(this.settings.defaultTransport);
+        }),
     );
 
     this.addCommand({
@@ -81,7 +81,7 @@ export default class VestaboardianPlugin extends Plugin {
         const leaf = this.app.workspace.getRightLeaf(false);
         if (leaf) {
           await leaf.setViewState({ type: VIEW_TYPE_VESTABOARD, active: true });
-          this.app.workspace.revealLeaf(leaf);
+          await this.app.workspace.revealLeaf(leaf);
         }
       },
     });
@@ -101,14 +101,13 @@ export default class VestaboardianPlugin extends Plugin {
         this.transportFor(this.settings.liveState?.transport ?? this.settings.defaultTransport)
           .readState(),
       getLiveGrid: () => this.settings.liveState?.grid ?? null,
-      onExit: async () => {
-        const live = this.settings.liveState;
-        if (!live) return;
+      onExit: () => {
+        if (!this.settings.liveState) return;
         // Note-targeted exit stamping is out of scope for polling (note identity
         // is not tracked across restarts); the primary exit stamp is
         // infer-on-next-post. Clear live state so we do not repeatedly fire.
         this.settings.liveState = null;
-        await this.saveSettings();
+        void this.saveSettings();
       },
     });
     this.poller.start();
@@ -185,7 +184,8 @@ export default class VestaboardianPlugin extends Plugin {
   }
 
   async loadSettings(): Promise<void> {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    const data = (await this.loadData()) as Partial<VestaboardianSettings> | null;
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, data);
   }
 
   async saveSettings(): Promise<void> {

@@ -644,11 +644,11 @@ var Poller = class {
   }
   start() {
     this.stop();
-    this.timer = setInterval(() => void this.tick(), this.opts.intervalMs);
+    this.timer = window.setInterval(() => void this.tick(), this.opts.intervalMs);
   }
   stop() {
     if (this.timer !== null) {
-      clearInterval(this.timer);
+      window.clearInterval(this.timer);
       this.timer = null;
     }
   }
@@ -715,11 +715,9 @@ var VestaboardianPlugin = class extends import_obsidian4.Plugin {
     );
     this.registerView(
       VIEW_TYPE_VESTABOARD,
-      (leaf) => new PreviewView(
-        leaf,
-        this.settings,
-        () => this.sendFromActiveNote(this.settings.defaultTransport)
-      )
+      (leaf) => new PreviewView(leaf, this.settings, () => {
+        void this.sendFromActiveNote(this.settings.defaultTransport);
+      })
     );
     this.addCommand({
       id: "open-preview",
@@ -728,7 +726,7 @@ var VestaboardianPlugin = class extends import_obsidian4.Plugin {
         const leaf = this.app.workspace.getRightLeaf(false);
         if (leaf) {
           await leaf.setViewState({ type: VIEW_TYPE_VESTABOARD, active: true });
-          this.app.workspace.revealLeaf(leaf);
+          await this.app.workspace.revealLeaf(leaf);
         }
       }
     });
@@ -754,11 +752,10 @@ var VestaboardianPlugin = class extends import_obsidian4.Plugin {
         var _a2, _b;
         return (_b = (_a2 = this.settings.liveState) == null ? void 0 : _a2.grid) != null ? _b : null;
       },
-      onExit: async () => {
-        const live = this.settings.liveState;
-        if (!live) return;
+      onExit: () => {
+        if (!this.settings.liveState) return;
         this.settings.liveState = null;
-        await this.saveSettings();
+        void this.saveSettings();
       }
     });
     this.poller.start();
@@ -821,7 +818,8 @@ var VestaboardianPlugin = class extends import_obsidian4.Plugin {
     new import_obsidian4.Notice("Sent to Vestaboard.");
   }
   async loadSettings() {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    const data = await this.loadData();
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, data);
   }
   async saveSettings() {
     await this.saveData(this.settings);

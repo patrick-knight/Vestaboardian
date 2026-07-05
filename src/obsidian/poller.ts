@@ -17,18 +17,19 @@ interface PollerOpts {
 }
 
 export class Poller {
-  private timer: ReturnType<typeof setInterval> | null = null;
+  private timer: number | null = null;
 
   constructor(private opts: PollerOpts) {}
 
   start(): void {
     this.stop();
-    this.timer = setInterval(() => void this.tick(), this.opts.intervalMs);
+    // window-scoped timers keep the plugin compatible with popout windows.
+    this.timer = window.setInterval(() => void this.tick(), this.opts.intervalMs);
   }
 
   stop(): void {
     if (this.timer !== null) {
-      clearInterval(this.timer);
+      window.clearInterval(this.timer);
       this.timer = null;
     }
   }
