@@ -47,17 +47,17 @@ export default class VestaboardianPlugin extends Plugin {
     this.addSettingTab(new VestaboardianSettingTab(this.app, this));
 
     this.addCommand({
-      id: "vestaboardian-send",
+      id: "send",
       name: "Send message from this note",
       callback: () => this.sendFromActiveNote(this.settings.defaultTransport),
     });
     this.addCommand({
-      id: "vestaboardian-send-local",
+      id: "send-local",
       name: "Send message from this note via Local",
       callback: () => this.sendFromActiveNote("local"),
     });
     this.addCommand({
-      id: "vestaboardian-send-cloud",
+      id: "send-cloud",
       name: "Send message from this note via Cloud",
       callback: () => this.sendFromActiveNote("cloud"),
     });
@@ -75,7 +75,7 @@ export default class VestaboardianPlugin extends Plugin {
     );
 
     this.addCommand({
-      id: "vestaboardian-open-preview",
+      id: "open-preview",
       name: "Open Vestaboard preview",
       callback: async () => {
         const leaf = this.app.workspace.getRightLeaf(false);
