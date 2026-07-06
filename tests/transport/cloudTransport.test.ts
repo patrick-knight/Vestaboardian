@@ -2,7 +2,11 @@ import { describe, it, expect, vi } from "vitest";
 import { CloudTransport } from "../../src/transport/cloudTransport";
 
 describe("CloudTransport", () => {
-  it("POSTs the grid with the read-write key header", async () => {
+  it("POSTs the grid wrapped in a characters object with the read-write key header", async () => {
+    // The raw [[...]] body form is described in Vestaboard's docs but the live
+    // rw.vestaboard.com API stores it as an EMPTY message (layout "[]"), so the
+    // board flips to blank while history shows an entry. The {characters: ...}
+    // wrapper is the shape all official examples use and must be preserved.
     const request = vi.fn().mockResolvedValue({ status: 200, json: {}, text: "" });
     const t = new CloudTransport({ apiKey: "RWKEY", request });
     await t.send([[1, 2]]);
@@ -10,7 +14,7 @@ describe("CloudTransport", () => {
       url: "https://rw.vestaboard.com/",
       method: "POST",
       headers: { "X-Vestaboard-Read-Write-Key": "RWKEY", "Content-Type": "application/json" },
-      body: JSON.stringify([[1, 2]]),
+      body: JSON.stringify({ characters: [[1, 2]] }),
     });
   });
 
@@ -45,5 +49,15 @@ describe("CloudTransport", () => {
     const request = vi.fn().mockResolvedValue({ status: 403, json: {}, text: "denied" });
     const t = new CloudTransport({ apiKey: "RWKEY", request });
     await expect(t.send([[1]])).rejects.toThrow(/403/);
+  });
+
+  it("surfaces the API's human-readable error message (e.g. quiet hours)", async () => {
+    const request = vi.fn().mockResolvedValue({
+      status: 423,
+      json: { status: "error", message: "It is quiet hours on this Vestaboard.", type: "QuietHours" },
+      text: '{"status":"error","message":"It is quiet hours on this Vestaboard.","type":"QuietHours"}',
+    });
+    const t = new CloudTransport({ apiKey: "RWKEY", request });
+    await expect(t.send([[1]])).rejects.toThrow(/quiet hours on this Vestaboard/);
   });
 });

@@ -22,7 +22,10 @@ export class CloudTransport implements Transport {
         "X-Vestaboard-Read-Write-Key": this.opts.apiKey,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(grid),
+      // Must be the {characters: ...} wrapper: the live API accepts a raw
+      // [[...]] body with 2xx but stores it as an EMPTY message (layout "[]"),
+      // blanking the board while still logging a history entry.
+      body: JSON.stringify({ characters: grid }),
     });
     if (res.status < 200 || res.status >= 300) {
       throw new Error(`Cloud API send failed: ${res.status} ${res.text}`);
