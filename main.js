@@ -300,24 +300,26 @@ var VestaboardianSettingTab = class extends import_obsidian.PluginSettingTab {
         await this.host.saveSettings();
       })
     );
-    new import_obsidian.Setting(containerEl).setName("Cloud Read/Write key").addText(
-      (t) => t.setValue(s.cloudKey).onChange(async (v) => {
+    new import_obsidian.Setting(containerEl).setName("Cloud Read/Write key").addText((t) => {
+      t.inputEl.type = "password";
+      t.setValue(s.cloudKey).onChange(async (v) => {
         s.cloudKey = v.trim();
         await this.host.saveSettings();
-      })
-    );
+      });
+    });
     new import_obsidian.Setting(containerEl).setName("Local host").addText(
       (t) => t.setValue(s.localHost).onChange(async (v) => {
         s.localHost = v.trim();
         await this.host.saveSettings();
       })
     );
-    new import_obsidian.Setting(containerEl).setName("Local API key").addText(
-      (t) => t.setValue(s.localKey).onChange(async (v) => {
+    new import_obsidian.Setting(containerEl).setName("Local API key").addText((t) => {
+      t.inputEl.type = "password";
+      t.setValue(s.localKey).onChange(async (v) => {
         s.localKey = v.trim();
         await this.host.saveSettings();
-      })
-    );
+      });
+    });
     new import_obsidian.Setting(containerEl).setName("Message marker heading").addText(
       (t) => t.setValue(s.marker).onChange(async (v) => {
         s.marker = v.trim() || "## Vestaboard";
