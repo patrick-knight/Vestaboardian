@@ -89,12 +89,13 @@ export class VestaboardianSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Cloud Read/Write key")
-      .addText((t) =>
+      .addText((t) => {
+        t.inputEl.type = "password";
         t.setValue(s.cloudKey).onChange(async (v) => {
           s.cloudKey = v.trim();
           await this.host.saveSettings();
-        }),
-      );
+        });
+      });
 
     new Setting(containerEl).setName("Local host").addText((t) =>
       t.setValue(s.localHost).onChange(async (v) => {
@@ -103,12 +104,13 @@ export class VestaboardianSettingTab extends PluginSettingTab {
       }),
     );
 
-    new Setting(containerEl).setName("Local API key").addText((t) =>
+    new Setting(containerEl).setName("Local API key").addText((t) => {
+      t.inputEl.type = "password";
       t.setValue(s.localKey).onChange(async (v) => {
         s.localKey = v.trim();
         await this.host.saveSettings();
-      }),
-    );
+      });
+    });
 
     new Setting(containerEl)
       .setName("Message marker heading")
