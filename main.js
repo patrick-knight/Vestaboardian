@@ -196,7 +196,7 @@ var LocalTransport = class {
     if (isObject(res.json) && Array.isArray(res.json.message)) {
       return res.json.message;
     }
-    return [];
+    throw new Error("Local API read failed: unrecognized response shape");
   }
   static async enable(host, enablementToken, request) {
     const res = await request({
@@ -249,9 +249,14 @@ var CloudTransport = class {
     if (res.status < 200 || res.status >= 300) {
       throw new Error(`Cloud API read failed: ${res.status} ${res.text}`);
     }
-    if (!isObject2(res.json) || !isObject2(res.json.currentMessage)) return [];
+    if (isObject2(res.json) && res.json.currentMessage === null) return [];
+    if (!isObject2(res.json) || !isObject2(res.json.currentMessage)) {
+      throw new Error("Cloud API read failed: unrecognized response shape");
+    }
     const layout = res.json.currentMessage.layout;
-    if (typeof layout !== "string" || layout.length === 0) return [];
+    if (typeof layout !== "string" || layout.length === 0) {
+      throw new Error("Cloud API read failed: unrecognized response shape");
+    }
     try {
       return JSON.parse(layout);
     } catch (e) {
@@ -292,6 +297,7 @@ var VestaboardianSettingTab = class extends import_obsidian.PluginSettingTab {
       (d) => d.addOption("flagship", "Flagship (6\xD722)").addOption("note", "Note (3\xD715)").setValue(s.device).onChange(async (v) => {
         s.device = v;
         await this.host.saveSettings();
+        this.host.refreshPreviews();
       })
     );
     new import_obsidian.Setting(containerEl).setName("Default transport").addDropdown(
@@ -313,23 +319,51 @@ var VestaboardianSettingTab = class extends import_obsidian.PluginSettingTab {
         await this.host.saveSettings();
       })
     );
+    let localKeyInput = null;
     new import_obsidian.Setting(containerEl).setName("Local API key").addText((t) => {
+      localKeyInput = t;
       t.inputEl.type = "password";
       t.setValue(s.localKey).onChange(async (v) => {
         s.localKey = v.trim();
         await this.host.saveSettings();
       });
     });
+    let enablementToken = "";
+    new import_obsidian.Setting(containerEl).setName("Enable Local API").setDesc(
+      "Paste the enablement token from vestaboard.com/local-api and press Enable; the permanent key is fetched from the board and stored above."
+    ).addText((t) => {
+      t.setPlaceholder("Enablement token");
+      t.inputEl.type = "password";
+      t.onChange((v) => {
+        enablementToken = v.trim();
+      });
+    }).addButton(
+      (b) => b.setButtonText("Enable").onClick(async () => {
+        if (!enablementToken) {
+          new import_obsidian.Notice("Vestaboardian: paste the enablement token first.");
+          return;
+        }
+        try {
+          await this.host.enableLocalApi(enablementToken);
+          new import_obsidian.Notice("Local API enabled \u2014 key saved.");
+          localKeyInput == null ? void 0 : localKeyInput.setValue(s.localKey);
+        } catch (e) {
+          new import_obsidian.Notice("Local API enablement failed: " + e.message);
+        }
+      })
+    );
     new import_obsidian.Setting(containerEl).setName("Message marker heading").addText(
       (t) => t.setValue(s.marker).onChange(async (v) => {
         s.marker = v.trim() || "## Vestaboard";
         await this.host.saveSettings();
+        this.host.refreshPreviews();
       })
     );
     new import_obsidian.Setting(containerEl).setName("Auto-fix by default").addToggle(
       (t) => t.setValue(s.autofixDefault).onChange(async (v) => {
         s.autofixDefault = v;
         await this.host.saveSettings();
+        this.host.refreshPreviews();
       })
     );
     new import_obsidian.Setting(containerEl).setName("Poll the board for exit times").addToggle(
@@ -360,10 +394,10 @@ var VestaboardianSettingTab = class extends import_obsidian.PluginSettingTab {
 };
 
 // src/core/segment.ts
+var SEGMENTER = typeof Intl !== "undefined" && "Segmenter" in Intl ? new Intl.Segmenter(void 0, { granularity: "grapheme" }) : null;
 function graphemes(line) {
-  if (typeof Intl !== "undefined" && "Segmenter" in Intl) {
-    const seg = new Intl.Segmenter(void 0, { granularity: "grapheme" });
-    return Array.from(seg.segment(line), (s) => s.segment);
+  if (SEGMENTER) {
+    return Array.from(SEGMENTER.segment(line), (s) => s.segment);
   }
   return Array.from(line);
 }
@@ -398,6 +432,9 @@ function compile(text, device) {
     while (codes.length < device.cols) codes.push(BLANK);
     grid.push(codes);
   });
+  while (grid.length < device.rows) {
+    grid.push(new Array(device.cols).fill(BLANK));
+  }
   return { grid, issues, overWidth };
 }
 
@@ -422,40 +459,40 @@ function autofix(text, device) {
 }
 
 // src/obsidian/region.ts
-var EMPTY = { found: false, message: "", startLine: -1, endLine: -1 };
+var EMPTY = { found: false, message: "" };
+var FENCE = /^\s*(```|~~~)/;
 function readMessageRegion(text, marker, maxRows) {
   const lines = text.split("\n");
   const markerTrim = marker.trim();
+  let inFence = false;
   let markerIdx = -1;
-  for (let i2 = 0; i2 < lines.length; i2++) {
-    if (lines[i2].trim() === markerTrim) {
-      markerIdx = i2;
+  for (let i = 0; i < lines.length; i++) {
+    if (FENCE.test(lines[i])) {
+      inFence = !inFence;
+      continue;
+    }
+    if (!inFence && lines[i].trim() === markerTrim) {
+      markerIdx = i;
       break;
     }
   }
   if (markerIdx === -1) return EMPTY;
   let start = markerIdx + 1;
   while (start < lines.length && lines[start].trim() === "") start++;
-  if (start >= lines.length) return { ...EMPTY, found: true };
+  if (start >= lines.length) return { found: true, message: "" };
   const collected = [];
-  let i = start;
-  for (; i < lines.length && collected.length < maxRows; i++) {
+  for (let i = start; i < lines.length && collected.length < maxRows; i++) {
     const line = lines[i];
     if (line.trim() === "") break;
     if (/^#{1,6}\s/.test(line)) break;
     collected.push(line);
   }
-  return {
-    found: true,
-    message: collected.join("\n"),
-    startLine: start,
-    endLine: start + collected.length - 1
-  };
+  return { found: true, message: collected.join("\n") };
 }
 
 // src/obsidian/sendPrep.ts
 function prepareSend(text, marker, device, autofixEnabled) {
-  const region = readMessageRegion(text, marker, device.rows);
+  const region = readMessageRegion(text, marker, device.rows + 1);
   if (!region.found) return { found: false, message: "", grid: [], errors: [] };
   let message = region.message;
   let result = compile(message, device);
@@ -475,8 +512,9 @@ var DIVIDER = "| --- | --- | --- | --- |";
 var LIVE_MARK = "\u2014 (live)";
 function truncateMessage(message, max = 18) {
   const oneLine = message.replace(/\s+/g, " ").trim();
-  if (oneLine.length <= max) return oneLine;
-  return oneLine.slice(0, max) + "\u2026";
+  const g = graphemes(oneLine);
+  if (g.length <= max) return oneLine;
+  return g.slice(0, max).join("") + "\u2026";
 }
 function formatRow(row) {
   return `| ${row.liveAt} | ${row.exitedAt} | ${row.transport} | ${truncateMessage(row.message)} |`;
@@ -497,7 +535,7 @@ function appendHistory(noteText, row) {
       dividerIdx = i;
       break;
     }
-    if (lines[i].startsWith("#") && i !== headingIdx) break;
+    if (lines[i].startsWith("#")) break;
   }
   if (dividerIdx === -1) {
     lines.splice(headingIdx + 1, 0, HEADER, DIVIDER, newRow);
@@ -511,10 +549,49 @@ function appendHistory(noteText, row) {
   return lines.join("\n");
 }
 
+// src/obsidian/editorDiff.ts
+function computeMinimalEdit(oldText, newText) {
+  if (oldText === newText) return null;
+  const oldL = oldText.split("\n");
+  const newL = newText.split("\n");
+  let start = 0;
+  while (start < oldL.length && start < newL.length && oldL[start] === newL[start]) {
+    start++;
+  }
+  let endOld = oldL.length - 1;
+  let endNew = newL.length - 1;
+  while (endOld >= start && endNew >= start && oldL[endOld] === newL[endNew]) {
+    endOld--;
+    endNew--;
+  }
+  if (endOld < start) {
+    const text = newL.slice(start, endNew + 1).join("\n");
+    if (start >= oldL.length) {
+      const lastLine = oldL.length - 1;
+      const pos2 = { line: lastLine, ch: oldL[lastLine].length };
+      return { from: pos2, to: pos2, text: "\n" + text };
+    }
+    const pos = { line: start, ch: 0 };
+    return { from: pos, to: pos, text: text + "\n" };
+  }
+  return {
+    from: { line: start, ch: 0 },
+    to: { line: endOld, ch: oldL[endOld].length },
+    text: newL.slice(start, endNew + 1).join("\n")
+  };
+}
+
 // src/obsidian/formatDate.ts
 function formatDate(d, fmt) {
   const pad = (n) => String(n).padStart(2, "0");
-  return fmt.replace("YYYY", String(d.getFullYear())).replace("MM", pad(d.getMonth() + 1)).replace("DD", pad(d.getDate())).replace("HH", pad(d.getHours())).replace("mm", pad(d.getMinutes()));
+  const tokens = {
+    YYYY: String(d.getFullYear()),
+    MM: pad(d.getMonth() + 1),
+    DD: pad(d.getDate()),
+    HH: pad(d.getHours()),
+    mm: pad(d.getMinutes())
+  };
+  return fmt.replace(/YYYY|MM|DD|HH|mm/g, (t) => tokens[t]);
 }
 
 // src/obsidian/ConfirmModal.ts
@@ -584,10 +661,14 @@ var ConfirmModal = class extends import_obsidian2.Modal {
 var import_obsidian3 = require("obsidian");
 var VIEW_TYPE_VESTABOARD = "vestaboard-preview";
 var PreviewView = class extends import_obsidian3.ItemView {
-  constructor(leaf, settings, onSend) {
+  constructor(leaf, settings, getTargetView, onSend) {
     super(leaf);
     this.settings = settings;
+    this.getTargetView = getTargetView;
     this.onSend = onSend;
+    // editor-change fires per keystroke and refresh() re-parses the note and
+    // rebuilds every tile; debounce so fast typing renders once, not per key.
+    this.refreshDebounced = (0, import_obsidian3.debounce)(() => this.refresh(), 250, true);
   }
   getViewType() {
     return VIEW_TYPE_VESTABOARD;
@@ -600,9 +681,11 @@ var PreviewView = class extends import_obsidian3.ItemView {
   }
   async onOpen() {
     this.registerEvent(
-      this.app.workspace.on("active-leaf-change", () => this.refresh())
+      this.app.workspace.on("active-leaf-change", () => this.refreshDebounced())
     );
-    this.registerEvent(this.app.workspace.on("editor-change", () => this.refresh()));
+    this.registerEvent(
+      this.app.workspace.on("editor-change", () => this.refreshDebounced())
+    );
     this.refresh();
   }
   refresh() {
@@ -610,9 +693,9 @@ var PreviewView = class extends import_obsidian3.ItemView {
     const root = this.contentEl;
     root.empty();
     const device = deviceFor(this.settings.device);
-    const view = this.app.workspace.getActiveViewOfType(import_obsidian3.MarkdownView);
+    const view = this.getTargetView();
     const text = (_a = view == null ? void 0 : view.editor.getValue()) != null ? _a : "";
-    const region = readMessageRegion(text, this.settings.marker, device.rows);
+    const region = readMessageRegion(text, this.settings.marker, device.rows + 1);
     if (!region.found) {
       root.createEl("p", { text: `No "${this.settings.marker}" section in this note.` });
       return;
@@ -694,10 +777,17 @@ var VestaboardianPlugin = class extends import_obsidian4.Plugin {
     super(...arguments);
     this.settings = DEFAULT_SETTINGS;
     this.poller = null;
+    this.lastMarkdownView = null;
   }
   async onload() {
     await this.loadSettings();
     this.addSettingTab(new VestaboardianSettingTab(this.app, this));
+    this.registerEvent(
+      this.app.workspace.on("active-leaf-change", () => {
+        const v = this.app.workspace.getActiveViewOfType(import_obsidian4.MarkdownView);
+        if (v) this.lastMarkdownView = v;
+      })
+    );
     this.addCommand({
       id: "send",
       name: "Send message from this note",
@@ -720,19 +810,26 @@ var VestaboardianPlugin = class extends import_obsidian4.Plugin {
     );
     this.registerView(
       VIEW_TYPE_VESTABOARD,
-      (leaf) => new PreviewView(leaf, this.settings, () => {
-        void this.sendFromActiveNote(this.settings.defaultTransport);
-      })
+      (leaf) => new PreviewView(
+        leaf,
+        this.settings,
+        () => this.targetMarkdownView(),
+        () => {
+          void this.sendFromActiveNote(this.settings.defaultTransport);
+        }
+      )
     );
     this.addCommand({
       id: "open-preview",
       name: "Open Vestaboard preview",
       callback: async () => {
-        const leaf = this.app.workspace.getRightLeaf(false);
-        if (leaf) {
+        const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_VESTABOARD)[0];
+        const leaf = existing != null ? existing : this.app.workspace.getRightLeaf(false);
+        if (!leaf) return;
+        if (!existing) {
           await leaf.setViewState({ type: VIEW_TYPE_VESTABOARD, active: true });
-          await this.app.workspace.revealLeaf(leaf);
         }
+        await this.app.workspace.revealLeaf(leaf);
       }
     });
     this.register(() => {
@@ -765,6 +862,34 @@ var VestaboardianPlugin = class extends import_obsidian4.Plugin {
     });
     this.poller.start();
   }
+  // The active markdown view, or the last one seen if a non-markdown leaf
+  // (like the preview sidebar) currently has focus. The cached view is only
+  // trusted while its leaf is still attached to the workspace.
+  targetMarkdownView() {
+    const active = this.app.workspace.getActiveViewOfType(import_obsidian4.MarkdownView);
+    if (active) {
+      this.lastMarkdownView = active;
+      return active;
+    }
+    const last = this.lastMarkdownView;
+    if (last && this.app.workspace.getLeavesOfType("markdown").some((l) => l.view === last)) {
+      return last;
+    }
+    return null;
+  }
+  // Re-render any open preview panes; called by the settings tab so device,
+  // marker, and auto-fix changes take effect without waiting for a keystroke.
+  refreshPreviews() {
+    for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_VESTABOARD)) {
+      if (leaf.view instanceof PreviewView) leaf.view.refresh();
+    }
+  }
+  // Exchange a Local API enablement token for the permanent key and store it.
+  async enableLocalApi(token) {
+    const key = await LocalTransport.enable(this.settings.localHost, token, requestAdapter);
+    this.settings.localKey = key;
+    await this.saveSettings();
+  }
   transportFor(which) {
     if (which === "local") {
       return new LocalTransport({
@@ -776,7 +901,7 @@ var VestaboardianPlugin = class extends import_obsidian4.Plugin {
     return new CloudTransport({ apiKey: this.settings.cloudKey, request: requestAdapter });
   }
   async sendFromActiveNote(which) {
-    const view = this.app.workspace.getActiveViewOfType(import_obsidian4.MarkdownView);
+    const view = this.targetMarkdownView();
     if (!view) {
       new import_obsidian4.Notice("Vestaboardian: open a note first.");
       return;
@@ -805,13 +930,15 @@ var VestaboardianPlugin = class extends import_obsidian4.Plugin {
       return;
     }
     const now = formatDate(/* @__PURE__ */ new Date(), this.settings.dateFormat);
-    const updated = appendHistory(text, {
+    const fresh = view.editor.getValue();
+    const updated = appendHistory(fresh, {
       liveAt: now,
       exitedAt: "\u2014 (live)",
       transport: which,
       message: prep.message
     });
-    view.editor.setValue(updated);
+    const edit = computeMinimalEdit(fresh, updated);
+    if (edit) view.editor.replaceRange(edit.text, edit.from, edit.to);
     this.settings.liveState = {
       grid: prep.grid,
       transport: which,

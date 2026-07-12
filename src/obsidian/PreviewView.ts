@@ -1,4 +1,4 @@
-import { ItemView, type WorkspaceLeaf, MarkdownView } from "obsidian";
+import { ItemView, MarkdownView, debounce, type WorkspaceLeaf } from "obsidian";
 import { deviceFor } from "../core/device";
 import { compile } from "../core/compile";
 import { validate, describeError } from "../core/validate";
@@ -10,9 +10,14 @@ import type { VestaboardianSettings } from "./settings";
 export const VIEW_TYPE_VESTABOARD = "vestaboard-preview";
 
 export class PreviewView extends ItemView {
+  // editor-change fires per keystroke and refresh() re-parses the note and
+  // rebuilds every tile; debounce so fast typing renders once, not per key.
+  private refreshDebounced = debounce(() => this.refresh(), 250, true);
+
   constructor(
     leaf: WorkspaceLeaf,
     private settings: VestaboardianSettings,
+    private getTargetView: () => MarkdownView | null,
     private onSend: () => void,
   ) {
     super(leaf);
@@ -30,20 +35,24 @@ export class PreviewView extends ItemView {
 
   async onOpen(): Promise<void> {
     this.registerEvent(
-      this.app.workspace.on("active-leaf-change", () => this.refresh()),
+      this.app.workspace.on("active-leaf-change", () => this.refreshDebounced()),
     );
-    this.registerEvent(this.app.workspace.on("editor-change", () => this.refresh()));
+    this.registerEvent(
+      this.app.workspace.on("editor-change", () => this.refreshDebounced()),
+    );
     this.refresh();
   }
 
-  private refresh(): void {
+  refresh(): void {
     const root = this.contentEl;
     root.empty();
     const device = deviceFor(this.settings.device);
 
-    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+    // Use the plugin's target view (active markdown view, or the last one
+    // seen) so focusing this pane — e.g. to click Send — does not blank it.
+    const view = this.getTargetView();
     const text = view?.editor.getValue() ?? "";
-    const region = readMessageRegion(text, this.settings.marker, device.rows);
+    const region = readMessageRegion(text, this.settings.marker, device.rows + 1);
 
     if (!region.found) {
       root.createEl("p", { text: `No "${this.settings.marker}" section in this note.` });

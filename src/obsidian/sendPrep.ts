@@ -27,7 +27,10 @@ export function prepareSend(
   device: Device,
   autofixEnabled: boolean,
 ): SendPrep {
-  const region = readMessageRegion(text, marker, device.rows);
+  // Read one row beyond the device height so an over-tall message actually
+  // reaches validate() and can fail with TooManyRows (or be trimmed by
+  // autofix) instead of the extra line being silently dropped.
+  const region = readMessageRegion(text, marker, device.rows + 1);
   if (!region.found) return { found: false, message: "", grid: [], errors: [] };
 
   let message = region.message;

@@ -47,4 +47,23 @@ describe("readMessageRegion", () => {
     const text = "## Vestaboard\nHELLO\n# Notes";
     expect(readMessageRegion(text, "## Vestaboard", 6).message).toBe("HELLO");
   });
+
+  it("ignores a marker quoted inside a fenced code block", () => {
+    const text = [
+      "```",
+      "## Vestaboard",
+      "EXAMPLE",
+      "```",
+      "## Vestaboard",
+      "REAL MESSAGE",
+    ].join("\n");
+    const r = readMessageRegion(text, "## Vestaboard", 6);
+    expect(r.found).toBe(true);
+    expect(r.message).toBe("REAL MESSAGE");
+  });
+
+  it("ignores a marker inside a tilde fence and finds none after it", () => {
+    const text = "~~~\n## Vestaboard\nEXAMPLE\n~~~\nplain text";
+    expect(readMessageRegion(text, "## Vestaboard", 6).found).toBe(false);
+  });
 });

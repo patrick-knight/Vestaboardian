@@ -1,3 +1,5 @@
+import { graphemes } from "../core/segment";
+
 export interface HistoryRow {
   liveAt: string;
   exitedAt: string;
@@ -12,8 +14,11 @@ const LIVE_MARK = "— (live)";
 
 export function truncateMessage(message: string, max = 18): string {
   const oneLine = message.replace(/\s+/g, " ").trim();
-  if (oneLine.length <= max) return oneLine;
-  return oneLine.slice(0, max) + "…";
+  // Truncate on grapheme clusters, not code units: a code-unit slice can cut
+  // through an emoji's surrogate pair and leave a dangling � in the table.
+  const g = graphemes(oneLine);
+  if (g.length <= max) return oneLine;
+  return g.slice(0, max).join("") + "…";
 }
 
 function formatRow(row: HistoryRow): string {
@@ -40,7 +45,7 @@ export function appendHistory(noteText: string, row: HistoryRow): string {
       dividerIdx = i;
       break;
     }
-    if (lines[i].startsWith("#") && i !== headingIdx) break;
+    if (lines[i].startsWith("#")) break;
   }
 
   if (dividerIdx === -1) {

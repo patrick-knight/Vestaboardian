@@ -1,4 +1,11 @@
-import { PluginSettingTab, Setting, type App, type Plugin } from "obsidian";
+import {
+  Notice,
+  PluginSettingTab,
+  Setting,
+  type App,
+  type Plugin,
+  type TextComponent,
+} from "obsidian";
 import type { DeviceName } from "../core/device";
 
 export interface LiveState {
@@ -49,6 +56,12 @@ interface SettingsHost extends Plugin {
   // controls so enabling/disabling/retiming polling takes effect immediately
   // rather than only on the next send or reload.
   restartPolling(): void;
+  // Re-render open preview panes so device/marker/auto-fix changes show
+  // immediately instead of waiting for the next keystroke or leaf change.
+  refreshPreviews(): void;
+  // Exchange a Local API enablement token for the permanent key (stored in
+  // settings.localKey by the host).
+  enableLocalApi(token: string): Promise<void>;
 }
 
 export class VestaboardianSettingTab extends PluginSettingTab {
@@ -71,6 +84,7 @@ export class VestaboardianSettingTab extends PluginSettingTab {
           .onChange(async (v) => {
             s.device = v as DeviceName;
             await this.host.saveSettings();
+            this.host.refreshPreviews();
           }),
       );
 
@@ -104,7 +118,9 @@ export class VestaboardianSettingTab extends PluginSettingTab {
       }),
     );
 
+    let localKeyInput: TextComponent | null = null;
     new Setting(containerEl).setName("Local API key").addText((t) => {
+      localKeyInput = t;
       t.inputEl.type = "password";
       t.setValue(s.localKey).onChange(async (v) => {
         s.localKey = v.trim();
@@ -112,12 +128,44 @@ export class VestaboardianSettingTab extends PluginSettingTab {
       });
     });
 
+    let enablementToken = "";
+    new Setting(containerEl)
+      .setName("Enable Local API")
+      .setDesc(
+        "Paste the enablement token from vestaboard.com/local-api and press Enable; " +
+          "the permanent key is fetched from the board and stored above.",
+      )
+      .addText((t) => {
+        t.setPlaceholder("Enablement token");
+        t.inputEl.type = "password";
+        t.onChange((v) => {
+          enablementToken = v.trim();
+        });
+      })
+      .addButton((b) =>
+        b.setButtonText("Enable").onClick(async () => {
+          if (!enablementToken) {
+            new Notice("Vestaboardian: paste the enablement token first.");
+            return;
+          }
+          try {
+            await this.host.enableLocalApi(enablementToken);
+            new Notice("Local API enabled — key saved.");
+            // Show the stored key in the field above without a full re-render.
+            localKeyInput?.setValue(s.localKey);
+          } catch (e) {
+            new Notice("Local API enablement failed: " + (e as Error).message);
+          }
+        }),
+      );
+
     new Setting(containerEl)
       .setName("Message marker heading")
       .addText((t) =>
         t.setValue(s.marker).onChange(async (v) => {
           s.marker = v.trim() || "## Vestaboard";
           await this.host.saveSettings();
+          this.host.refreshPreviews();
         }),
       );
 
@@ -127,6 +175,7 @@ export class VestaboardianSettingTab extends PluginSettingTab {
         t.setValue(s.autofixDefault).onChange(async (v) => {
           s.autofixDefault = v;
           await this.host.saveSettings();
+          this.host.refreshPreviews();
         }),
       );
 

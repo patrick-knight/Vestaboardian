@@ -29,10 +29,30 @@ describe("CloudTransport", () => {
     expect(await t.readState()).toEqual(board);
   });
 
-  it("readState returns [] for non-object/empty payloads", async () => {
-    const request = vi.fn().mockResolvedValue({ status: 200, json: undefined, text: "" });
+  it("readState returns [] for an explicit null currentMessage (nothing on the board)", async () => {
+    const request = vi.fn().mockResolvedValue({
+      status: 200,
+      json: { currentMessage: null },
+      text: "",
+    });
     const t = new CloudTransport({ apiKey: "RWKEY", request });
     expect(await t.readState()).toEqual([]);
+  });
+
+  it("readState throws on an unrecognized response shape (poller skips the tick)", async () => {
+    // Must throw rather than return []: the poller skips ticks on errors, but
+    // a returned [] compares unequal to the live grid and would permanently
+    // clear liveState on a transient glitch.
+    const t = (json: unknown) =>
+      new CloudTransport({
+        apiKey: "RWKEY",
+        request: vi.fn().mockResolvedValue({ status: 200, json, text: "" }),
+      });
+    await expect(t(undefined).readState()).rejects.toThrow(/unrecognized response shape/);
+    await expect(t({}).readState()).rejects.toThrow(/unrecognized response shape/);
+    await expect(t({ currentMessage: {} }).readState()).rejects.toThrow(
+      /unrecognized response shape/,
+    );
   });
 
   it("readState throws a clear error for invalid layout JSON", async () => {

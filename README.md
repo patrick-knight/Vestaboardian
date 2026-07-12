@@ -83,8 +83,10 @@ requires a one-time enablement:
 1. Request a **Local API enablement token** from Vestaboard at
    [vestaboard.com/local-api](https://www.vestaboard.com/local-api). Your board
    must be paired, online, and up to date. The token arrives by email.
-2. From a computer on the same network as the board, enable the Local API and
-   capture the permanent key:
+2. In **Settings → Vestaboardian**, paste the token into **Enable Local API**
+   and press **Enable** (your computer must be on the same network as the
+   board). The plugin exchanges it with the board for the permanent key and
+   stores it automatically. Alternatively, do the same by hand:
 
    ```sh
    curl -X POST \
@@ -92,11 +94,10 @@ requires a one-time enablement:
      http://vestaboard.local:7000/local-api/enablement
    ```
 
-   The JSON response contains an `apiKey` field — that is your Local API key.
-   Save it somewhere safe.
+   and paste the returned `apiKey` into the **Local API key** setting.
 3. If `vestaboard.local` does not resolve on your network, find the board's IP
-   address in your router's client list and use that instead (both in the curl
-   command and in the plugin's **Local host** setting).
+   address in your router's client list and put that in the plugin's
+   **Local host** setting first.
 
 > **Token storage note:** the plugin stores your keys in plaintext in this
 > vault's `.obsidian/plugins/vestaboardian/data.json`. They stay in your vault
@@ -114,6 +115,7 @@ Open **Settings → Vestaboardian**:
 | **Cloud Read/Write key** | The key from the Developer section (see above). | — |
 | **Local host** | Hostname or IP of your board on the LAN. | `vestaboard.local` |
 | **Local API key** | The `apiKey` returned by the enablement request (see above). | — |
+| **Enable Local API** | Paste your enablement token and press Enable to fetch and store the key automatically. | — |
 | **Message marker heading** | The heading the plugin looks for in a note to find your message. | `## Vestaboard` |
 | **Auto-fix by default** | If a message is invalid, silently normalize it (drop unsupported characters, truncate over-wide rows, trim extra rows) instead of blocking. | On |
 | **Poll the board for exit times** | Periodically read the board and clear the plugin's "currently live" state if the board was changed elsewhere (e.g. from the mobile app). | Off |
