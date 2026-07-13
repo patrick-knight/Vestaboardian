@@ -1,7 +1,15 @@
 name: Release
 
+# Two paths into a release:
+# - Push to main: always runs build/lint/test as CI. If manifest.json's
+#   version has no tag yet (i.e. a merged PR bumped it), this run tags,
+#   attests, and publishes the release automatically — merging a version
+#   bump IS the release action.
+# - Push a x.y.z tag by hand: the original manual path, still supported.
 on:
   push:
+    branches:
+      - main
     tags:
       - "[0-9]+.[0-9]+.[0-9]+"
 
@@ -14,8 +22,12 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out tag
+      - name: Check out
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          # Full history so existing tags are available for the
+          # already-released check below.
+          fetch-depth: 0
 
       - name: Set up Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -35,15 +47,35 @@ jobs:
       - name: Test
         run: npm test
 
-      - name: Verify tag matches manifest version
+      - name: Decide whether this run releases
+        id: plan
         run: |
-          MANIFEST_VERSION=$(node -p "require('./manifest.json').version")
-          if [ "$MANIFEST_VERSION" != "$GITHUB_REF_NAME" ]; then
-            echo "Tag $GITHUB_REF_NAME does not match manifest version $MANIFEST_VERSION" >&2
-            exit 1
+          VERSION=$(node -p "require('./manifest.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            if [ "$VERSION" != "$GITHUB_REF_NAME" ]; then
+              echo "Tag $GITHUB_REF_NAME does not match manifest version $VERSION" >&2
+              exit 1
+            fi
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          elif git rev-parse -q --verify "refs/tags/$VERSION" >/dev/null; then
+            echo "Version $VERSION is already tagged - CI only, nothing to release."
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "New version $VERSION detected - tagging and releasing."
+            echo "release=true" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Tag the new version
+        if: steps.plan.outputs.release == 'true' && github.ref_type == 'branch'
+        env:
+          VERSION: ${{ steps.plan.outputs.version }}
+        run: |
+          git tag "$VERSION"
+          git push origin "refs/tags/$VERSION"
+
       - name: Attest build provenance
+        if: steps.plan.outputs.release == 'true'
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
         with:
           subject-path: |
@@ -52,10 +84,12 @@ jobs:
             styles.css
 
       - name: Create GitHub release
+        if: steps.plan.outputs.release == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.plan.outputs.version }}
         run: |
-          gh release create "$GITHUB_REF_NAME" \
-            --title "$GITHUB_REF_NAME" \
+          gh release create "$VERSION" \
+            --title "$VERSION" \
             --generate-notes \
             main.js manifest.json styles.css
