@@ -10,4 +10,12 @@ describe("formatDate", () => {
     const d = new Date(2026, 0, 5, 9, 7);
     expect(formatDate(d, "YYYY-MM-DD HH:mm")).toBe("2026-01-05 09:07");
   });
+  it("replaces repeated tokens everywhere, not just the first occurrence", () => {
+    const d = new Date(2026, 6, 11, 8, 5);
+    expect(formatDate(d, "MM/DD (MM-DD)")).toBe("07/11 (07-11)");
+  });
+  it("leaves unknown text untouched and never re-matches replaced output", () => {
+    const d = new Date(2026, 6, 11, 8, 5);
+    expect(formatDate(d, "at HH:mm o'clock")).toBe("at 08:05 o'clock");
+  });
 });

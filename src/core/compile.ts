@@ -47,5 +47,12 @@ export function compile(text: string, device: Device): CompileResult {
     grid.push(codes);
   });
 
+  // Pad to the full device height: the transports POST this grid verbatim and
+  // the poller compares it against the board's full readState, so a short grid
+  // would mis-shape the payload and instantly false-trigger the exit detector.
+  while (grid.length < device.rows) {
+    grid.push(new Array<number>(device.cols).fill(BLANK));
+  }
+
   return { grid, issues, overWidth };
 }

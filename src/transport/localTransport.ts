@@ -43,11 +43,14 @@ export class LocalTransport implements Transport {
     }
     // The Local API returns the grid directly as a 2D array; tolerate a
     // {message: [...]} wrapper as well in case firmware versions differ.
+    // Anything else must THROW, not return []: the poller treats a thrown
+    // error as a skipped tick, but a returned [] compares unequal to the live
+    // grid and would permanently clear liveState on a transient glitch.
     if (Array.isArray(res.json)) return res.json as number[][];
     if (isObject(res.json) && Array.isArray(res.json.message)) {
       return res.json.message as number[][];
     }
-    return [];
+    throw new Error("Local API read failed: unrecognized response shape");
   }
 
   static async enable(

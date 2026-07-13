@@ -51,6 +51,13 @@ describe("historyWriter", () => {
     expect(out).toContain("## Vestaboard\nHI");
   });
 
+  it("truncateMessage never splits an emoji surrogate pair", () => {
+    // 10 tiles: "A" + nine squares. A code-unit slice(0, 5) would cut through
+    // the third square and leave a dangling high surrogate (�).
+    expect(truncateMessage("A🟥🟥🟥🟥🟥🟥🟥🟥🟥", 5)).toBe("A🟥🟥🟥🟥…");
+    expect(truncateMessage("❤️❤️❤️", 2)).toBe("❤️❤️…");
+  });
+
   it("truncateMessage collapses newlines and ellipsizes", () => {
     expect(truncateMessage("STANDUP IN\n10 MINUTES", 12)).toBe("STANDUP IN 1…");
   });

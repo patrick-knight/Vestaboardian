@@ -39,10 +39,13 @@ describe("LocalTransport", () => {
     expect(await t.readState()).toEqual(board);
   });
 
-  it("readState returns [] when JSON is not array/object", async () => {
+  it("readState throws on an unrecognized response shape (poller skips the tick)", async () => {
+    // Must throw rather than return []: the poller skips ticks on errors, but
+    // a returned [] compares unequal to the live grid and would permanently
+    // clear liveState on a transient glitch.
     const request = vi.fn().mockResolvedValue({ status: 200, json: undefined, text: "" });
     const t = new LocalTransport({ host: "vestaboard.local", apiKey: "KEY", request });
-    expect(await t.readState()).toEqual([]);
+    await expect(t.readState()).rejects.toThrow(/unrecognized response shape/);
   });
 
   it("throws on non-2xx send", async () => {

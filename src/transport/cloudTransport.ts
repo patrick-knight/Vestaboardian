@@ -41,9 +41,19 @@ export class CloudTransport implements Transport {
     if (res.status < 200 || res.status >= 300) {
       throw new Error(`Cloud API read failed: ${res.status} ${res.text}`);
     }
-    if (!isObject(res.json) || !isObject(res.json.currentMessage)) return [];
+    // A null currentMessage is a real "nothing on the board" answer and maps
+    // to []. Any other unrecognized shape must THROW, not return []: the
+    // poller treats a thrown error as a skipped tick, but a returned []
+    // compares unequal to the live grid and would permanently clear liveState
+    // on a transient glitch.
+    if (isObject(res.json) && res.json.currentMessage === null) return [];
+    if (!isObject(res.json) || !isObject(res.json.currentMessage)) {
+      throw new Error("Cloud API read failed: unrecognized response shape");
+    }
     const layout = res.json.currentMessage.layout;
-    if (typeof layout !== "string" || layout.length === 0) return [];
+    if (typeof layout !== "string" || layout.length === 0) {
+      throw new Error("Cloud API read failed: unrecognized response shape");
+    }
     try {
       return JSON.parse(layout) as number[][];
     } catch {

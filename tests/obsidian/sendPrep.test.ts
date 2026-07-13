@@ -26,6 +26,27 @@ describe("prepareSend", () => {
     expect(p.errors.length).toBeGreaterThan(0);
   });
 
+  it("pads the grid to full device dimensions", () => {
+    const p = prepareSend(`${M}\nHELLO`, M, FLAGSHIP, false);
+    expect(p.grid.length).toBe(FLAGSHIP.rows);
+    expect(p.grid.every((row) => row.length === FLAGSHIP.cols)).toBe(true);
+  });
+
+  it("reports TooManyRows for an over-tall message when autofix is off", () => {
+    const lines = ["A", "B", "C", "D", "E", "F", "G"]; // 7 rows on a 6-row device
+    const p = prepareSend(`${M}\n${lines.join("\n")}`, M, FLAGSHIP, false);
+    expect(p.found).toBe(true);
+    expect(p.errors.some((e) => e.kind === "TooManyRows")).toBe(true);
+  });
+
+  it("trims an over-tall message when autofix is on", () => {
+    const lines = ["A", "B", "C", "D", "E", "F", "G"];
+    const p = prepareSend(`${M}\n${lines.join("\n")}`, M, FLAGSHIP, true);
+    expect(p.errors).toEqual([]);
+    expect(p.grid.length).toBe(FLAGSHIP.rows);
+    expect(p.message.split("\n")).toHaveLength(FLAGSHIP.rows);
+  });
+
   it("auto-fixes when enabled and reports the FIXED message (item 4)", () => {
     // 'ñ' is unsupported; autofix drops it. The reported message must be the
     // fixed text the board actually received, not the original.

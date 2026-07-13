@@ -1,11 +1,11 @@
 export interface MessageRegion {
   found: boolean;
   message: string;
-  startLine: number;
-  endLine: number;
 }
 
-const EMPTY: MessageRegion = { found: false, message: "", startLine: -1, endLine: -1 };
+const EMPTY: MessageRegion = { found: false, message: "" };
+
+const FENCE = /^\s*(```|~~~)/;
 
 export function readMessageRegion(
   text: string,
@@ -15,9 +15,16 @@ export function readMessageRegion(
   const lines = text.split("\n");
   const markerTrim = marker.trim();
 
+  // Find the marker heading, ignoring occurrences inside fenced code blocks
+  // (e.g. a note that documents the plugin and quotes "## Vestaboard").
+  let inFence = false;
   let markerIdx = -1;
   for (let i = 0; i < lines.length; i++) {
-    if (lines[i].trim() === markerTrim) {
+    if (FENCE.test(lines[i])) {
+      inFence = !inFence;
+      continue;
+    }
+    if (!inFence && lines[i].trim() === markerTrim) {
       markerIdx = i;
       break;
     }
@@ -27,11 +34,10 @@ export function readMessageRegion(
   // Skip blank lines after the marker.
   let start = markerIdx + 1;
   while (start < lines.length && lines[start].trim() === "") start++;
-  if (start >= lines.length) return { ...EMPTY, found: true };
+  if (start >= lines.length) return { found: true, message: "" };
 
   const collected: string[] = [];
-  let i = start;
-  for (; i < lines.length && collected.length < maxRows; i++) {
+  for (let i = start; i < lines.length && collected.length < maxRows; i++) {
     const line = lines[i];
     if (line.trim() === "") break;
     // Stop at an ATX heading (`#`..`######` followed by a space) — but NOT at a
@@ -41,10 +47,5 @@ export function readMessageRegion(
     collected.push(line);
   }
 
-  return {
-    found: true,
-    message: collected.join("\n"),
-    startLine: start,
-    endLine: start + collected.length - 1,
-  };
+  return { found: true, message: collected.join("\n") };
 }
