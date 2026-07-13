@@ -51,7 +51,11 @@ jobs:
         id: plan
         run: |
           VERSION=$(node -p "require('./manifest.json').version")
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Manifest version '$VERSION' is not a plain x.y.z semver; refusing to tag/release." >&2
+            exit 1
+          fi
+          printf 'version=%s\n' "$VERSION" >> "$GITHUB_OUTPUT"
           if [ "$GITHUB_REF_TYPE" = "tag" ]; then
             if [ "$VERSION" != "$GITHUB_REF_NAME" ]; then
               echo "Tag $GITHUB_REF_NAME does not match manifest version $VERSION" >&2
