@@ -97,7 +97,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.plan.outputs.version }}
         run: |
-          gh release create "$VERSION" \
-            --title "$VERSION" \
-            --generate-notes \
-            main.js manifest.json styles.css
+          if gh release view "$VERSION" &>/dev/null; then
+            echo "Release $VERSION already exists – skipping creation."
+          else
+            gh release create "$VERSION" \
+              --title "$VERSION" \
+              --generate-notes \
+              main.js manifest.json styles.css
+          fi
