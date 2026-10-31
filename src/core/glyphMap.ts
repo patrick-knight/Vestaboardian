@@ -47,6 +47,24 @@ export function isColorCode(code: number): boolean {
   return code >= 63 && code <= 71;
 }
 
+// Color code -> display name, kept next to EMOJI_TO_CODE so the two tables
+// (which color code means what) can't drift apart.
+const COLOR_CODE_TO_NAME: Record<number, string> = {
+  63: "red",
+  64: "orange",
+  65: "yellow",
+  66: "green",
+  67: "blue",
+  68: "violet",
+  69: "white",
+  70: "black",
+  71: "filled",
+};
+
+export function colorName(code: number): string | null {
+  return COLOR_CODE_TO_NAME[code] ?? null;
+}
+
 // Reverse: code -> glyph. Color codes render as background only ("").
 const CODE_TO_GLYPH = new Map<number, string>();
 for (const [ch, code] of CHAR_TO_CODE) CODE_TO_GLYPH.set(code, ch);

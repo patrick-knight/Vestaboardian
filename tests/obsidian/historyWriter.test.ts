@@ -61,4 +61,35 @@ describe("historyWriter", () => {
   it("truncateMessage collapses newlines and ellipsizes", () => {
     expect(truncateMessage("STANDUP IN\n10 MINUTES", 12)).toBe("STANDUP IN 1…");
   });
+
+  it("drops leftover pipe rows when rebuilding a malformed table", () => {
+    // Heading present with a stray, divider-less fragment left behind by a
+    // prior malformed write; no "| ---" line for appendHistory to anchor on.
+    const note = "## Vestaboard History\n| Live (sent) | Exited |\nmore text\n";
+    const out = appendHistory(note, {
+      liveAt: "2026-06-30 14:03",
+      exitedAt: "— (live)",
+      transport: "cloud",
+      message: "HELLO",
+    });
+    const pipeLines = out.split("\n").filter((l) => l.startsWith("|"));
+    // Only the freshly-rebuilt header, divider, and new row should remain.
+    expect(pipeLines).toEqual([
+      "| Live (sent) | Exited | Transport | Message |",
+      "| --- | --- | --- | --- |",
+      "| 2026-06-30 14:03 | — (live) | cloud | HELLO |",
+    ]);
+    expect(out).toContain("more text");
+  });
+
+  it("leaves prose after the heading untouched when rebuilding", () => {
+    const note = "## Vestaboard History\nnot a table yet\n";
+    const out = appendHistory(note, {
+      liveAt: "t",
+      exitedAt: "— (live)",
+      transport: "cloud",
+      message: "HI",
+    });
+    expect(out).toContain("not a table yet");
+  });
 });

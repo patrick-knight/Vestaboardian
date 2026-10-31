@@ -9,15 +9,25 @@ export function gridsEqual(a: number[][], b: number[][]): boolean {
   return true;
 }
 
+// Consecutive read failures before we surface anything to the user: a couple
+// of transient network blips should stay silent, but a dead key/host
+// shouldn't fail forever with no signal.
+const FAILURE_NOTICE_THRESHOLD = 3;
+
 interface PollerOpts {
   intervalMs: number;
   readState: () => Promise<number[][]>;
   getLiveGrid: () => number[][] | null;
   onExit: () => void;
+  // Called once, when consecutive readState failures reach the threshold.
+  // Fires again if failures resume after a successful read in between.
+  onPersistentError?: (err: unknown) => void;
 }
 
 export class Poller {
   private timer: number | null = null;
+  private consecutiveFailures = 0;
+  private notifiedThisFailureStreak = false;
 
   constructor(private opts: PollerOpts) {}
 
@@ -40,9 +50,19 @@ export class Poller {
     let state: number[][];
     try {
       state = await this.opts.readState();
-    } catch {
+    } catch (err) {
+      this.consecutiveFailures++;
+      if (
+        this.consecutiveFailures >= FAILURE_NOTICE_THRESHOLD &&
+        !this.notifiedThisFailureStreak
+      ) {
+        this.notifiedThisFailureStreak = true;
+        this.opts.onPersistentError?.(err);
+      }
       return; // transient network errors: skip this tick
     }
+    this.consecutiveFailures = 0;
+    this.notifiedThisFailureStreak = false;
     if (!gridsEqual(state, live)) {
       this.opts.onExit();
     }

@@ -49,8 +49,14 @@ export function appendHistory(noteText: string, row: HistoryRow): string {
   }
 
   if (dividerIdx === -1) {
-    // Heading exists but table is malformed/missing; rebuild table under heading.
-    lines.splice(headingIdx + 1, 0, HEADER, DIVIDER, newRow);
+    // Heading exists but table is malformed/missing. Any lines immediately
+    // after the heading that look like leftover table rows (start with "|")
+    // are remnants of a broken table, not user prose — drop them before
+    // rebuilding so repeated malformed appends don't pile up orphaned rows
+    // or duplicate header text.
+    let end = headingIdx + 1;
+    while (end < lines.length && lines[end].trim().startsWith("|")) end++;
+    lines.splice(headingIdx + 1, end - (headingIdx + 1), HEADER, DIVIDER, newRow);
     return lines.join("\n");
   }
 

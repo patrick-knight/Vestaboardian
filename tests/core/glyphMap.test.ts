@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   charToCode,
   codeToGlyph,
+  colorName,
   EMOJI_TO_CODE,
   isColorCode,
   BLANK,
@@ -55,5 +56,17 @@ describe("glyphMap reverse", () => {
     expect(codeToGlyph(67, "flagship")).toBe("");
     expect(isColorCode(67)).toBe(true);
     expect(isColorCode(26)).toBe(false);
+  });
+});
+
+describe("colorName", () => {
+  it("names every color code", () => {
+    expect(colorName(63)).toBe("red");
+    expect(colorName(67)).toBe("blue");
+    expect(colorName(71)).toBe("filled");
+  });
+  it("is null for non-color codes", () => {
+    expect(colorName(1)).toBeNull();
+    expect(colorName(0)).toBeNull();
   });
 });

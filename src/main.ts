@@ -130,6 +130,13 @@ export default class VestaboardianPlugin extends Plugin {
         this.settings.liveState = null;
         void this.saveSettings();
       },
+      onPersistentError: (err) => {
+        new Notice(
+          "Vestaboardian: polling the board has failed repeatedly (" +
+            (err as Error).message +
+            "). Check your API key and host in settings.",
+        );
+      },
     });
     this.poller.start();
   }
