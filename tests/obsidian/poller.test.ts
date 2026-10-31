@@ -49,4 +49,48 @@ describe("Poller", () => {
     expect(onExit).not.toHaveBeenCalled();
     p.stop();
   });
+
+  it("reports persistent failure once consecutive errors cross the threshold", async () => {
+    const onPersistentError = vi.fn();
+    const p = new Poller({
+      intervalMs: 1000,
+      readState: async () => {
+        throw new Error("boom");
+      },
+      getLiveGrid: () => [[1, 2]],
+      onExit: vi.fn(),
+      onPersistentError,
+    });
+    p.start();
+    await vi.advanceTimersByTimeAsync(2000); // 2 failures: below threshold
+    expect(onPersistentError).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1000); // 3rd failure: crosses threshold
+    expect(onPersistentError).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(3000); // stays silent while streak continues
+    expect(onPersistentError).toHaveBeenCalledTimes(1);
+    p.stop();
+  });
+
+  it("resets the failure streak after a successful read", async () => {
+    const onPersistentError = vi.fn();
+    let fail = true;
+    const p = new Poller({
+      intervalMs: 1000,
+      readState: async () => {
+        if (fail) throw new Error("boom");
+        return [[1, 2]];
+      },
+      getLiveGrid: () => [[1, 2]],
+      onExit: vi.fn(),
+      onPersistentError,
+    });
+    p.start();
+    await vi.advanceTimersByTimeAsync(2000); // 2 failures
+    fail = false;
+    await vi.advanceTimersByTimeAsync(1000); // success resets the streak
+    fail = true;
+    await vi.advanceTimersByTimeAsync(2000); // only 2 failures again: below threshold
+    expect(onPersistentError).not.toHaveBeenCalled();
+    p.stop();
+  });
 });

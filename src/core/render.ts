@@ -1,5 +1,5 @@
 import type { Device } from "./device";
-import { codeToGlyph, isColorCode } from "./glyphMap";
+import { codeToGlyph, colorName as colorNameFor, isColorCode } from "./glyphMap";
 
 export interface Tile {
   code: number;
@@ -9,23 +9,11 @@ export interface Tile {
 
 export type RenderModel = Tile[][];
 
-const COLOR_NAME: Record<number, string> = {
-  63: "red",
-  64: "orange",
-  65: "yellow",
-  66: "green",
-  67: "blue",
-  68: "violet",
-  69: "white",
-  70: "black",
-  71: "filled",
-};
-
 function tile(code: number, device: Device): Tile {
   return {
     code,
     glyph: codeToGlyph(code, device.name),
-    colorName: isColorCode(code) ? COLOR_NAME[code] ?? null : null,
+    colorName: isColorCode(code) ? colorNameFor(code) : null,
   };
 }
 

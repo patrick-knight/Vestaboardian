@@ -114,6 +114,21 @@ var EMOJI_TO_CODE = /* @__PURE__ */ new Map([
 function isColorCode(code) {
   return code >= 63 && code <= 71;
 }
+var COLOR_CODE_TO_NAME = {
+  63: "red",
+  64: "orange",
+  65: "yellow",
+  66: "green",
+  67: "blue",
+  68: "violet",
+  69: "white",
+  70: "black",
+  71: "filled"
+};
+function colorName(code) {
+  var _a;
+  return (_a = COLOR_CODE_TO_NAME[code]) != null ? _a : null;
+}
 var CODE_TO_GLYPH = /* @__PURE__ */ new Map();
 for (const [ch, code] of CHAR_TO_CODE) CODE_TO_GLYPH.set(code, ch);
 function codeToGlyph(code, device) {
@@ -125,23 +140,11 @@ function codeToGlyph(code, device) {
 }
 
 // src/core/render.ts
-var COLOR_NAME = {
-  63: "red",
-  64: "orange",
-  65: "yellow",
-  66: "green",
-  67: "blue",
-  68: "violet",
-  69: "white",
-  70: "black",
-  71: "filled"
-};
 function tile(code, device) {
-  var _a;
   return {
     code,
     glyph: codeToGlyph(code, device.name),
-    colorName: isColorCode(code) ? (_a = COLOR_NAME[code]) != null ? _a : null : null
+    colorName: isColorCode(code) ? colorName(code) : null
   };
 }
 function render(grid, device) {
@@ -293,6 +296,15 @@ var VestaboardianSettingTab = class extends import_obsidian.PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
     const s = this.host.settings;
+    const saveDebounced = (0, import_obsidian.debounce)(() => void this.host.saveSettings(), 400, true);
+    const saveAndRefreshDebounced = (0, import_obsidian.debounce)(() => {
+      void this.host.saveSettings();
+      this.host.refreshPreviews();
+    }, 400, true);
+    const saveAndRestartPollingDebounced = (0, import_obsidian.debounce)(() => {
+      void this.host.saveSettings();
+      this.host.restartPolling();
+    }, 400, true);
     new import_obsidian.Setting(containerEl).setName("Device").addDropdown(
       (d) => d.addOption("flagship", "Flagship (6\xD722)").addOption("note", "Note (3\xD715)").setValue(s.device).onChange(async (v) => {
         s.device = v;
@@ -308,24 +320,24 @@ var VestaboardianSettingTab = class extends import_obsidian.PluginSettingTab {
     );
     new import_obsidian.Setting(containerEl).setName("Cloud Read/Write key").addText((t) => {
       t.inputEl.type = "password";
-      t.setValue(s.cloudKey).onChange(async (v) => {
+      t.setValue(s.cloudKey).onChange((v) => {
         s.cloudKey = v.trim();
-        await this.host.saveSettings();
+        saveDebounced();
       });
     });
     new import_obsidian.Setting(containerEl).setName("Local host").addText(
-      (t) => t.setValue(s.localHost).onChange(async (v) => {
+      (t) => t.setValue(s.localHost).onChange((v) => {
         s.localHost = v.trim();
-        await this.host.saveSettings();
+        saveDebounced();
       })
     );
     let localKeyInput = null;
     new import_obsidian.Setting(containerEl).setName("Local API key").addText((t) => {
       localKeyInput = t;
       t.inputEl.type = "password";
-      t.setValue(s.localKey).onChange(async (v) => {
+      t.setValue(s.localKey).onChange((v) => {
         s.localKey = v.trim();
-        await this.host.saveSettings();
+        saveDebounced();
       });
     });
     let enablementToken = "";
@@ -353,10 +365,9 @@ var VestaboardianSettingTab = class extends import_obsidian.PluginSettingTab {
       })
     );
     new import_obsidian.Setting(containerEl).setName("Message marker heading").addText(
-      (t) => t.setValue(s.marker).onChange(async (v) => {
+      (t) => t.setValue(s.marker).onChange((v) => {
         s.marker = v.trim() || "## Vestaboard";
-        await this.host.saveSettings();
-        this.host.refreshPreviews();
+        saveAndRefreshDebounced();
       })
     );
     new import_obsidian.Setting(containerEl).setName("Auto-fix by default").addToggle(
@@ -374,16 +385,15 @@ var VestaboardianSettingTab = class extends import_obsidian.PluginSettingTab {
       })
     );
     new import_obsidian.Setting(containerEl).setName(`Poll interval (seconds, min ${MIN_POLL_SEC})`).addText(
-      (t) => t.setValue(String(s.pollingIntervalSec)).onChange(async (v) => {
+      (t) => t.setValue(String(s.pollingIntervalSec)).onChange((v) => {
         s.pollingIntervalSec = floorPollInterval(Number(v) || MIN_POLL_SEC);
-        await this.host.saveSettings();
-        this.host.restartPolling();
+        saveAndRestartPollingDebounced();
       })
     );
     new import_obsidian.Setting(containerEl).setName("History date format").addText(
-      (t) => t.setValue(s.dateFormat).onChange(async (v) => {
+      (t) => t.setValue(s.dateFormat).onChange((v) => {
         s.dateFormat = v;
-        await this.host.saveSettings();
+        saveDebounced();
       })
     );
     containerEl.createEl("p", {
@@ -538,7 +548,9 @@ function appendHistory(noteText, row) {
     if (lines[i].startsWith("#")) break;
   }
   if (dividerIdx === -1) {
-    lines.splice(headingIdx + 1, 0, HEADER, DIVIDER, newRow);
+    let end = headingIdx + 1;
+    while (end < lines.length && lines[end].trim().startsWith("|")) end++;
+    lines.splice(headingIdx + 1, end - (headingIdx + 1), HEADER, DIVIDER, newRow);
     return lines.join("\n");
   }
   const firstDataIdx = dividerIdx + 1;
@@ -725,10 +737,13 @@ function gridsEqual(a, b) {
   }
   return true;
 }
+var FAILURE_NOTICE_THRESHOLD = 3;
 var Poller = class {
   constructor(opts) {
     this.opts = opts;
     this.timer = null;
+    this.consecutiveFailures = 0;
+    this.notifiedThisFailureStreak = false;
   }
   start() {
     this.stop();
@@ -741,14 +756,22 @@ var Poller = class {
     }
   }
   async tick() {
+    var _a, _b;
     const live = this.opts.getLiveGrid();
     if (!live) return;
     let state;
     try {
       state = await this.opts.readState();
-    } catch (e) {
+    } catch (err) {
+      this.consecutiveFailures++;
+      if (this.consecutiveFailures >= FAILURE_NOTICE_THRESHOLD && !this.notifiedThisFailureStreak) {
+        this.notifiedThisFailureStreak = true;
+        (_b = (_a = this.opts).onPersistentError) == null ? void 0 : _b.call(_a, err);
+      }
       return;
     }
+    this.consecutiveFailures = 0;
+    this.notifiedThisFailureStreak = false;
     if (!gridsEqual(state, live)) {
       this.opts.onExit();
     }
@@ -858,6 +881,11 @@ var VestaboardianPlugin = class extends import_obsidian4.Plugin {
         if (!this.settings.liveState) return;
         this.settings.liveState = null;
         void this.saveSettings();
+      },
+      onPersistentError: (err) => {
+        new import_obsidian4.Notice(
+          "Vestaboardian: polling the board has failed repeatedly (" + err.message + "). Check your API key and host in settings."
+        );
       }
     });
     this.poller.start();

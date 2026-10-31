@@ -1,4 +1,5 @@
 import {
+  debounce,
   Notice,
   PluginSettingTab,
   Setting,
@@ -74,6 +75,19 @@ export class VestaboardianSettingTab extends PluginSettingTab {
     containerEl.empty();
     const s = this.host.settings;
 
+    // Typing into these fields should not write data.json (and, for marker /
+    // poll interval, restart the poller or re-render previews) on every
+    // keystroke, so debounce the persist/side-effect step.
+    const saveDebounced = debounce(() => void this.host.saveSettings(), 400, true);
+    const saveAndRefreshDebounced = debounce(() => {
+      void this.host.saveSettings();
+      this.host.refreshPreviews();
+    }, 400, true);
+    const saveAndRestartPollingDebounced = debounce(() => {
+      void this.host.saveSettings();
+      this.host.restartPolling();
+    }, 400, true);
+
     new Setting(containerEl)
       .setName("Device")
       .addDropdown((d) =>
@@ -105,16 +119,16 @@ export class VestaboardianSettingTab extends PluginSettingTab {
       .setName("Cloud Read/Write key")
       .addText((t) => {
         t.inputEl.type = "password";
-        t.setValue(s.cloudKey).onChange(async (v) => {
+        t.setValue(s.cloudKey).onChange((v) => {
           s.cloudKey = v.trim();
-          await this.host.saveSettings();
+          saveDebounced();
         });
       });
 
     new Setting(containerEl).setName("Local host").addText((t) =>
-      t.setValue(s.localHost).onChange(async (v) => {
+      t.setValue(s.localHost).onChange((v) => {
         s.localHost = v.trim();
-        await this.host.saveSettings();
+        saveDebounced();
       }),
     );
 
@@ -122,9 +136,9 @@ export class VestaboardianSettingTab extends PluginSettingTab {
     new Setting(containerEl).setName("Local API key").addText((t) => {
       localKeyInput = t;
       t.inputEl.type = "password";
-      t.setValue(s.localKey).onChange(async (v) => {
+      t.setValue(s.localKey).onChange((v) => {
         s.localKey = v.trim();
-        await this.host.saveSettings();
+        saveDebounced();
       });
     });
 
@@ -162,10 +176,9 @@ export class VestaboardianSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Message marker heading")
       .addText((t) =>
-        t.setValue(s.marker).onChange(async (v) => {
+        t.setValue(s.marker).onChange((v) => {
           s.marker = v.trim() || "## Vestaboard";
-          await this.host.saveSettings();
-          this.host.refreshPreviews();
+          saveAndRefreshDebounced();
         }),
       );
 
@@ -192,17 +205,16 @@ export class VestaboardianSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName(`Poll interval (seconds, min ${MIN_POLL_SEC})`)
       .addText((t) =>
-        t.setValue(String(s.pollingIntervalSec)).onChange(async (v) => {
+        t.setValue(String(s.pollingIntervalSec)).onChange((v) => {
           s.pollingIntervalSec = floorPollInterval(Number(v) || MIN_POLL_SEC);
-          await this.host.saveSettings();
-          this.host.restartPolling();
+          saveAndRestartPollingDebounced();
         }),
       );
 
     new Setting(containerEl).setName("History date format").addText((t) =>
-      t.setValue(s.dateFormat).onChange(async (v) => {
+      t.setValue(s.dateFormat).onChange((v) => {
         s.dateFormat = v;
-        await this.host.saveSettings();
+        saveDebounced();
       }),
     );
 
